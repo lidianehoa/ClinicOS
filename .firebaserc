@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "manual-clinico"
+  },
+  "targets": {
+    "manual-clinico": {
+      "hosting": {
+        "monitorbea": [
+          "monitorbea"
+        ]
+      }
+    }
+  }
+}
