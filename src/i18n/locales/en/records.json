@@ -1,0 +1,12 @@
+{
+  "title": "Medical Records",
+  "medical_record": "Medical Record",
+  "clinical_history": "Clinical History",
+  "vaccines": "Vaccines",
+  "exams": "Exams",
+  "prescriptions": "Prescriptions",
+  "export_pdf": "Export PDF",
+  "print_record": "Print Record",
+  "documents": "Documents & Attachments",
+  "upload_exam": "Upload Exam"
+}

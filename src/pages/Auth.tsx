@@ -4,19 +4,17 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from '../services/firebase';
-import { saveUserProfile, type UserRole, type AppUser } from '../services/dataService';
+import { saveUserProfile, getStaffByEmail, type UserRole, type AppUser } from '../services/dataService';
 import { 
   Mail, 
-  Lock, 
-  User, 
-  Stethoscope, 
-  ShieldCheck, 
+  Lock,
   AlertCircle,
   ArrowRight
 } from 'lucide-react';
-import logoUrl from '../../Clinica Bem Estar Animal - LOGO_original horizontal  copiar.png';
+import { useTranslation } from 'react-i18next';
 
 const Auth = () => {
+  const { t } = useTranslation(['auth', 'common']);
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,9 +22,6 @@ const Auth = () => {
   // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [nome, setNome] = useState('');
-  const [role, setRole] = useState<UserRole>('auxiliar');
-  const [crmv, setCrmv] = useState('');
 
   // Auto-detect if user is already authenticated but missing profile
   useState(() => {
@@ -45,26 +40,35 @@ const Auth = () => {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
       } else {
-        // Validation for veterinarian
-        if (role === 'veterinario' && !crmv.trim()) {
-          throw new Error('CRMV é obrigatório para veterinários');
+        // First Access Logic
+        const staffRecord = await getStaffByEmail(cleanEmail);
+        
+        if (!staffRecord) {
+          throw new Error('email-not-authorized');
         }
 
         let user = auth.currentUser;
         
         if (!user) {
-          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
           user = userCredential.user;
         }
 
+        // Map accessLevel to UserRole
+        let mappedRole: UserRole = 'auxiliar';
+        if (staffRecord.accessLevel === 'Professional') mappedRole = 'veterinario';
+        if (staffRecord.accessLevel === 'Manager') mappedRole = 'gerente';
+        if (staffRecord.accessLevel === 'Admin') mappedRole = 'administrador';
+
         const profile: AppUser = {
           uid: user.uid,
-          nome,
-          email: user.email || email,
-          role,
-          crmv: role === 'veterinario' ? (crmv || '') : '',
+          nome: staffRecord.name,
+          email: user.email || cleanEmail,
+          role: mappedRole,
+          crmv: staffRecord.professionalId || '',
           status: 'ativo',
-          photoURL: user.photoURL || null
+          photoURL: user.photoURL || null,
+          staffId: staffRecord.id
         };
 
         await saveUserProfile(profile);
@@ -73,12 +77,13 @@ const Auth = () => {
       console.error('Erro Auth:', err);
       let msg = 'Ocorreu um erro técnico. Verifique sua conexão.';
       
+      if (err.message === 'email-not-authorized') msg = 'E-mail não autorizado. O administrador precisa cadastrá-lo em Configurações.';
       if (err.code === 'auth/invalid-credential') msg = 'Email ou senha incorretos.';
       if (err.code === 'auth/user-not-found') msg = 'Utilizador não encontrado.';
       if (err.code === 'auth/wrong-password') msg = 'Senha incorreta.';
       if (err.code === 'auth/invalid-email') msg = 'Formato de email inválido.';
-      if (err.code === 'auth/email-already-in-use') msg = 'Este email já está em uso.';
-      if (err.code === 'auth/weak-password') msg = 'A senha deve ter pelo menos 6 caracteres.';
+      if (err.code === 'auth/email-already-in-use') msg = 'Este email já possui senha cadastrada.';
+      if (err.code === 'auth/weak-password') msg = 'A nova senha deve ter pelo menos 6 caracteres.';
       if (err.code === 'auth/unauthorized-domain') msg = 'Domínio não autorizado no Firebase Console.';
       if (err.code === 'auth/network-request-failed') msg = 'Falha na rede. Verifique sua internet.';
       if (err.code === 'auth/too-many-requests') msg = 'Muitas tentativas. Tente novamente mais tarde.';
@@ -103,37 +108,20 @@ const Auth = () => {
       <div className="w-full max-w-md px-6 relative z-10">
         <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-[40px] p-8 md:p-10 shadow-2xl shadow-black/20">
           <div className="flex flex-col items-center mb-10 text-center">
-            <img src={logoUrl} alt="Logo" className="h-16 mb-6 drop-shadow-lg" />
             <h1 className="text-3xl font-bold text-white mb-2">
-              {isLogin ? 'Bem-vindo de volta' : 'Criar nova conta'}
+              {isLogin ? t('login_title') : t('register_title', 'Primeiro Acesso')}
             </h1>
             <p className="text-white/60 text-sm">
               {isLogin 
-                ? 'Acesse o sistema de gestão do ClinicOS' 
-                : 'Cadastre-se para começar a usar o CRM'}
+                ? t('login_subtitle', 'Acesse o sistema de gestão do ClinicOS') 
+                : t('register_subtitle', 'Cadastre sua senha para acessar o sistema')}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {!isLogin && (
-              <div className="space-y-2">
-                <label className="text-white/80 text-sm font-medium ml-2">Nome Completo</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-                  <input
-                    type="text"
-                    required
-                    value={nome}
-                    onChange={e => setNome(e.target.value)}
-                    placeholder="João Silva"
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors"
-                  />
-                </div>
-              </div>
-            )}
 
             <div className="space-y-2">
-              <label className="text-white/80 text-sm font-medium ml-2">Email</label>
+              <label className="text-white/80 text-sm font-medium ml-2">{t('email_label')}</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
                 <input
@@ -141,14 +129,14 @@ const Auth = () => {
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="seu@email.com"
+                  placeholder={t('email_placeholder')}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-white/80 text-sm font-medium ml-2">Senha</label>
+              <label className="text-white/80 text-sm font-medium ml-2">{isLogin ? t('password_label') : t('new_password_label', 'Nova Senha')}</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
                 <input
@@ -156,49 +144,13 @@ const Auth = () => {
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder={t('password_placeholder')}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
             </div>
 
-            {!isLogin && (
-              <>
-                <div className="space-y-2">
-                  <label className="text-white/80 text-sm font-medium ml-2">Cargo</label>
-                  <div className="relative">
-                    <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-                    <select
-                      value={role}
-                      onChange={e => setRole(e.target.value as UserRole)}
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white appearance-none focus:outline-none focus:border-primary/50 transition-colors"
-                    >
-                      <option value="auxiliar" className="bg-base text-white">Auxiliar</option>
-                      <option value="veterinario" className="bg-base text-white">Profissional de Saúde</option>
-                      <option value="gerente" className="bg-base text-white">Gerente</option>
-                      <option value="administrador" className="bg-base text-white">Administrador</option>
-                    </select>
-                  </div>
-                </div>
 
-                {role === 'veterinario' && (
-                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <label className="text-white/80 text-sm font-medium ml-2">Registro Profissional</label>
-                    <div className="relative">
-                      <Stethoscope className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-                      <input
-                        type="text"
-                        required
-                        value={crmv}
-                        onChange={e => setCrmv(e.target.value)}
-                        placeholder="Ex: 12345/PR"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors"
-                      />
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
 
             {error && (
               <div className="flex items-center gap-3 bg-red-500/20 border border-red-500/30 text-red-200 px-4 py-3 rounded-2xl text-sm animate-in zoom-in-95 duration-200">
@@ -216,7 +168,7 @@ const Auth = () => {
                 <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  {isLogin ? 'Entrar no Sistema' : 'Criar Minha Conta'}
+                  {isLogin ? t('login_button') : t('register_button', 'Cadastrar Senha')}
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
@@ -229,9 +181,9 @@ const Auth = () => {
               className="text-white/60 hover:text-white transition-colors text-sm font-medium"
             >
               {isLogin ? (
-                <>Não tem uma conta? <span className="text-primary">Cadastre-se agora</span></>
+                <>{t('first_access_prompt', 'Primeiro acesso ao sistema?')} <span className="text-primary">{t('register_button', 'Cadastrar Senha')}</span></>
               ) : (
-                <>Já possui uma conta? <span className="text-primary">Faça login</span></>
+                <>{t('already_have_password', 'Já possui uma senha?')} <span className="text-primary">{t('do_login', 'Fazer Login')}</span></>
               )}
             </button>
           </div>

@@ -13,6 +13,7 @@ import {
 } from '../services/dataService';
 import { emitirDocumentoFiscal } from '../services/nfeService';
 import { toLocalDateString } from '../services/dataService';
+import { useTranslation } from 'react-i18next';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,6 +38,7 @@ interface PDVAutonomoProps {
 // Componente principal
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PDVAutonomo({ userProfile }: PDVAutonomoProps) {
+  const { t } = useTranslation(['cashier', 'common']);
   const today = toLocalDateString(new Date());
   const [selectedDate] = useState(today);
 
@@ -251,7 +253,7 @@ export default function PDVAutonomo({ userProfile }: PDVAutonomoProps) {
             <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shadow-sm shadow-primary/20">
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <span className="text-slate-800 font-bold text-sm tracking-tight uppercase">BEA PDV</span>
+            <span className="text-slate-800 font-bold text-sm tracking-tight uppercase">{t('cashier:pos.title', 'BEA PDV')}</span>
             <span className="text-slate-300 text-xs">·</span>
             <span className="text-slate-500 text-xs">{userProfile?.nome}</span>
           </div>
@@ -399,14 +401,14 @@ export default function PDVAutonomo({ userProfile }: PDVAutonomoProps) {
 
         {/* Header da coluna central */}
         <div className="px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between">
-          <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Finalização</span>
+          <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{t('cashier:pos.checkout', 'Finalização')}</span>
           {cart.length > 0 && (
             <button
               onClick={clearCart}
               className="flex items-center gap-1.5 text-gray-600 hover:text-red-400 text-xs transition-colors"
             >
               <RotateCcw className="w-3 h-3" />
-              Limpar
+              {t('common:clear', 'Limpar')}
             </button>
           )}
         </div>
@@ -454,7 +456,7 @@ export default function PDVAutonomo({ userProfile }: PDVAutonomoProps) {
               {nfeStatus && (
                 <div className={`flex items-center gap-3 text-[10px] font-black uppercase rounded-xl px-4 py-3 border ${
                   nfeStatus.type === 'success'
-                    ? 'bg-sky-50 text-sky-600 border-sky-100'
+                    ? 'bg-teal-50 text-teal-600 border-teal-100'
                     : 'bg-red-50 text-red-600 border-red-100'
                 }`}>
                   {nfeStatus.type === 'success'
@@ -567,8 +569,8 @@ export default function PDVAutonomo({ userProfile }: PDVAutonomoProps) {
                 const active = metodo === m.id;
                 const colorMap = {
                   emerald: active ? 'border-emerald-500 bg-emerald-50 text-emerald-600 shadow-sm' : '',
-                  sky: active ? 'border-sky-500 bg-sky-50 text-sky-600 shadow-sm' : '',
-                  violet: active ? 'border-violet-500 bg-violet-50 text-violet-600 shadow-sm' : '',
+                  sky: active ? 'border-teal-500 bg-teal-50 text-teal-600 shadow-sm' : '',
+                  violet: active ? 'border-teal-500 bg-teal-50 text-teal-600 shadow-sm' : '',
                   pink: active ? 'border-pink-500 bg-pink-50 text-pink-600 shadow-sm' : '',
                 };
                 return (
@@ -599,7 +601,7 @@ export default function PDVAutonomo({ userProfile }: PDVAutonomoProps) {
                   {(['Stone', 'Getnet'] as const).map(m => {
                     const isSelected = maquininha === m;
                     // Usa pink se for crédito, violet se for débito (para manter a lógica de cores)
-                    const activeColor = metodo === 'Cartão Crédito' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-violet-500 bg-violet-50 text-violet-600';
+                    const activeColor = metodo === 'Cartão Crédito' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-teal-500 bg-teal-50 text-teal-600';
                     
                     return (
                       <button

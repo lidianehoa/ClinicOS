@@ -1,0 +1,20 @@
+{
+  "title": "Dashboard",
+  "welcome": "Bom dia",
+  "kpi_revenue": "Faturamento",
+  "kpi_expenses": "Despesas",
+  "kpi_balance": "Saldo Real",
+  "kpi_avg_ticket": "Ticket Médio",
+  "kpi_appointments": "Atendimentos",
+  "kpi_new_clients": "Novos Clientes",
+  "kpi_return_rate": "Taxa de Retorno",
+  "period_today": "Hoje",
+  "period_week": "Esta semana",
+  "period_month": "Este mês",
+  "revenue_chart": "Faturamento por período",
+  "top_services": "Serviços mais realizados",
+  "recent_activity": "Atividade recente",
+  "stock_alerts": "Alertas de estoque",
+  "stock_alert_msg": "produtos abaixo do estoque mínimo",
+  "view_all_alerts": "Ver todos os alertas"
+}

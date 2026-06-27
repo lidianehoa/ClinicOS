@@ -1,0 +1,15 @@
+{
+  "title": "Products and Services",
+  "new_product": "New Product",
+  "import_csv": "Import via CSV",
+  "barcode": "Barcode",
+  "sku": "SKU",
+  "category": "Category",
+  "stock": "Current Stock",
+  "min_stock": "Minimum Stock",
+  "cost_price": "Cost Price",
+  "sale_price": "Sale Price",
+  "supplier": "Supplier",
+  "type_product": "Physical Product",
+  "type_service": "Service"
+}

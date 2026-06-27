@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, CreditCard, DollarSign, TrendingDown } from 'lucide-react';
 import { subscribeAllDailyFlows, subscribeAllDespesas, toLocalDateString, type Registro, type Despesa, CATEGORIAS_DESPESA } from '../services/dataService';
+import { useTranslation } from 'react-i18next';
 
 const Dashboard = () => {
+  const { t } = useTranslation(['dashboard', 'common']);
   const [allRecords, setAllRecords] = useState<Registro[]>([]);
   const [allDespesas, setAllDespesas] = useState<Despesa[]>([]);
   
@@ -88,8 +90,8 @@ const Dashboard = () => {
     <div className="space-y-6 animate-fade-in pb-10">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Dashboard Gerencial</h1>
-          <p className="text-slate-500 mt-1">Analytics e KPIs do período selecionado.</p>
+          <h1 className="text-3xl font-bold text-slate-800">{t('dashboard:title', 'Dashboard Gerencial')}</h1>
+          <p className="text-slate-500 mt-1">{t('dashboard:subtitle', 'Analytics e KPIs do período selecionado.')}</p>
         </div>
         <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-purple-100 shadow-sm">
           <span className="text-xs font-bold text-slate-400 uppercase ml-2">Filtrar Mês</span>
@@ -109,19 +111,19 @@ const Dashboard = () => {
             <TrendingUp className="w-7 h-7 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-800">Desempenho da Semana</h2>
-            <p className="text-slate-500 text-sm">Últimos 7 dias de operação</p>
+            <h2 className="text-lg font-bold text-slate-800">{t('dashboard:week_performance', 'Desempenho da Semana')}</h2>
+            <p className="text-slate-500 text-sm">{t('dashboard:last_7_days', 'Últimos 7 dias de operação')}</p>
           </div>
         </div>
         
         <div className="flex gap-8">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Faturamento (7d)</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t('dashboard:kpi_revenue', 'Faturamento')} (7d)</p>
             <p className="text-xl font-black text-slate-800">{fmt(kpis.faturamentoSemana)}</p>
           </div>
           <div className="w-px h-10 bg-slate-200 hidden md:block" />
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Despesas (7d)</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t('dashboard:kpi_expenses', 'Despesas')} (7d)</p>
             <p className="text-xl font-black text-red-500">{fmt(kpis.despesasSemana)}</p>
           </div>
           <div className="w-px h-10 bg-slate-200 hidden md:block" />
@@ -138,11 +140,11 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-purple-100 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Saldo Real</p>
+            <p className="text-slate-500 text-sm font-medium">{t('dashboard:kpi_balance', 'Saldo Real')}</p>
             <p className={`text-2xl font-bold mt-2 ${kpis.saldoReal < 0 ? 'text-red-500' : 'text-slate-800'}`}>
               {fmt(kpis.saldoReal)}
             </p>
-            <p className="text-slate-400 text-xs font-medium mt-2">faturamento − despesas</p>
+            <p className="text-slate-400 text-xs font-medium mt-2">{t('dashboard:balance_subtitle', 'faturamento − despesas')}</p>
           </div>
           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${kpis.saldoReal < 0 ? 'bg-red-50' : 'bg-primary/10'}`}>
             <DollarSign className={`w-6 h-6 ${kpis.saldoReal < 0 ? 'text-red-400' : 'text-primary'}`} />
@@ -151,10 +153,10 @@ const Dashboard = () => {
 
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-purple-100 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Faturamento</p>
+            <p className="text-slate-500 text-sm font-medium">{t('dashboard:kpi_revenue', 'Faturamento')}</p>
             <p className="text-2xl font-bold text-slate-800 mt-2">{fmt(kpis.totalFaturamento)}</p>
             <p className="text-emerald-500 text-xs font-medium mt-2 flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" /> Total entradas
+              <TrendingUp className="w-3 h-3" /> {t('dashboard:total_entries', 'Total entradas')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center">
@@ -164,10 +166,10 @@ const Dashboard = () => {
 
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-red-100 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Despesas</p>
+            <p className="text-slate-500 text-sm font-medium">{t('dashboard:kpi_expenses', 'Despesas')}</p>
             <p className="text-2xl font-bold text-slate-800 mt-2">{fmt(kpis.totalDespesas)}</p>
             <p className="text-red-400 text-xs font-medium mt-2 flex items-center gap-1">
-              <TrendingDown className="w-3 h-3" /> Total saídas
+              <TrendingDown className="w-3 h-3" /> {t('dashboard:total_exits', 'Total saídas')}
             </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center">
@@ -177,9 +179,9 @@ const Dashboard = () => {
 
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-purple-100 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-sm font-medium">Ticket Médio</p>
+            <p className="text-slate-500 text-sm font-medium">{t('dashboard:kpi_avg_ticket', 'Ticket Médio')}</p>
             <p className="text-2xl font-bold text-slate-800 mt-2">{fmt(kpis.ticketMedio)}</p>
-            <p className="text-secondary text-xs font-medium mt-2">Por atendimento</p>
+            <p className="text-secondary text-xs font-medium mt-2">{t('dashboard:per_appointment', 'Por atendimento')}</p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-secondary/10 flex items-center justify-center">
             <CreditCard className="w-6 h-6 text-secondary" />
@@ -192,7 +194,7 @@ const Dashboard = () => {
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-purple-100">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-base font-semibold text-slate-700">
-              Fluxo de Caixa — Últimos 7 Dias
+              {t('dashboard:cashflow_7d', 'Fluxo de Caixa — Últimos 7 Dias')}
             </h3>
             <div className="flex items-center gap-4 text-xs font-medium">
               <div className="flex items-center gap-1.5">
@@ -249,7 +251,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-3xl shadow-sm border border-purple-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-purple-50">
             <h3 className="text-base font-semibold text-slate-700">
-              Distribuição por Forma de Pagamento
+              {t('dashboard:payment_methods_dist', 'Distribuição por Forma de Pagamento')}
             </h3>
           </div>
           <div className="overflow-x-auto">
@@ -292,7 +294,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-3xl shadow-sm border border-red-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-red-50 bg-red-50/20">
             <h3 className="text-base font-semibold text-slate-700">
-              Distribuição de Despesas
+              {t('dashboard:expenses_dist', 'Distribuição de Despesas')}
             </h3>
           </div>
           <div className="overflow-x-auto">

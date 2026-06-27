@@ -1,0 +1,32 @@
+src/components/medical/DischargeModal.tsx(4,56): error TS6133: 'TimelineEvent' is declared but its value is never read.
+src/components/medical/HospitalizationEvolutions.tsx(2,10): error TS6133: 'collection' is declared but its value is never read.
+src/components/medical/HospitalizationEvolutions.tsx(2,36): error TS6133: 'getDocs' is declared but its value is never read.
+src/components/medical/HospitalizationEvolutions.tsx(3,1): error TS6133: 'db' is declared but its value is never read.
+src/components/medical/HospitalizationPrescriptions.tsx(2,10): error TS6133: 'collection' is declared but its value is never read.
+src/components/medical/HospitalizationPrescriptions.tsx(2,36): error TS6133: 'getDocs' is declared but its value is never read.
+src/components/medical/HospitalizationPrescriptions.tsx(3,1): error TS6133: 'db' is declared but its value is never read.
+src/components/medical/HospitalizationPrescriptions.tsx(5,48): error TS6133: 'XCircle' is declared but its value is never read.
+src/components/medical/HospitalizationPrescriptions.tsx(132,36): error TS6133: 'i' is declared but its value is never read.
+src/components/medical/HospitalizationSupplies.tsx(5,42): error TS6133: 'Check' is declared but its value is never read.
+src/components/medical/HospitalizationSupplies.tsx(5,49): error TS6133: 'AlertTriangle' is declared but its value is never read.
+src/components/medical/NewHospitalizationModal.tsx(2,10): error TS6133: 'collection' is declared but its value is never read.
+src/components/medical/NewHospitalizationModal.tsx(3,1): error TS6133: 'db' is declared but its value is never read.
+src/components/medical/NewHospitalizationModal.tsx(4,83): error TS6133: 'TimelineEvent' is declared but its value is never read.
+src/components/medical/NewHospitalizationModal.tsx(4,98): error TS6133: 'recordsCol' is declared but its value is never read.
+src/components/medical/NewHospitalizationModal.tsx(64,35): error TS2339: Property 'id' does not exist on type 'Animal'.
+src/components/medical/NewHospitalizationModal.tsx(70,36): error TS2339: Property '_id' does not exist on type 'Customer'.
+src/components/medical/NewHospitalizationModal.tsx(132,33): error TS2339: Property '_id' does not exist on type 'Customer'.
+src/pages/medico/ExecutionMap.tsx(2,10): error TS6133: 'collection' is declared but its value is never read.
+src/pages/medico/ExecutionMap.tsx(3,1): error TS6133: 'db' is declared but its value is never read.
+src/pages/medico/ExecutionMap.tsx(5,53): error TS6133: 'User' is declared but its value is never read.
+src/pages/medico/ExecutionMap.tsx(5,59): error TS6133: 'Info' is declared but its value is never read.
+src/pages/medico/ExecutionMap.tsx(24,23): error TS6133: 'userProfile' is declared but its value is never read.
+src/pages/medico/HospitalizationHistory.tsx(2,10): error TS6133: 'collection' is declared but its value is never read.
+src/pages/medico/HospitalizationHistory.tsx(4,19): error TS6133: 'Calendar' is declared but its value is never read.
+src/pages/medico/HospitalizationSheet.tsx(3,1): error TS6133: 'db' is declared but its value is never read.
+src/pages/medico/HospitalizationSheet.tsx(5,23): error TS6133: 'FileText' is declared but its value is never read.
+src/pages/medico/HospitalizationsList.tsx(2,10): error TS6133: 'collection' is declared but its value is never read.
+src/pages/medico/HospitalizationsList.tsx(2,36): error TS6133: 'getDocs' is declared but its value is never read.
+src/pages/medico/HospitalizationsList.tsx(3,1): error TS6133: 'db' is declared but its value is never read.
+src/pages/medico/HospitalizationsList.tsx(28,33): error TS6133: 'userProfile' is declared but its value is never read.
+src/pages/medico/HospitalizationsList.tsx(31,10): error TS6133: 'now' is declared but its value is never read.

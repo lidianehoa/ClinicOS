@@ -172,7 +172,7 @@ const ImportarProdutos = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
                         { label: 'Total', value: stats.total, icon: <Package className="w-5 h-5 text-secondary" />, color: 'bg-purple-50' },
-                        { label: 'Serviços', value: stats.servicos, icon: <BarChart2 className="w-5 h-5 text-blue-500" />, color: 'bg-blue-50' },
+                        { label: 'Serviços', value: stats.servicos, icon: <BarChart2 className="w-5 h-5 text-teal-500" />, color: 'bg-blue-50' },
                         { label: 'Produtos', value: stats.produtos, icon: <Package className="w-5 h-5 text-emerald-500" />, color: 'bg-emerald-50' },
                         { label: 'Com preço', value: stats.comPreco, icon: <CheckCircle className="w-5 h-5 text-amber-500" />, color: 'bg-amber-50' },
                     ].map(c => (
@@ -220,7 +220,7 @@ const ImportarProdutos = () => {
                                         <td className="px-4 py-2 text-slate-400 text-xs">{p.codigo}</td>
                                         <td className="px-4 py-2 font-medium text-slate-800">{p.nome}</td>
                                         <td className="px-4 py-2">
-                                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${p.tipo === 'Serviço' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-secondary'
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${p.tipo === 'Serviço' ? 'bg-blue-50 text-teal-600' : 'bg-purple-50 text-secondary'
                                                 }`}>{p.tipo}</span>
                                         </td>
                                         <td className="px-4 py-2 text-slate-500 text-xs">{p.grupo}</td>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CreditCard, DollarSign, UserPlus, Save, UserCheck,
   PlusCircle, Search, Trash2, TrendingDown,
-  ChevronDown, ChevronUp, MessageCircle,
+  ChevronDown, ChevronUp, MessageCircle, FileText
 } from 'lucide-react';
 import {
   saveDailyFlow, subscribeAllDailyFlows,
@@ -16,7 +16,10 @@ import {
   type CategoriaDespesa,
   type Customer,
   type AppUser,
+  type MedicalRecord
 } from '../services/dataService';
+import ProntuarioModal from '../components/ProntuarioModal';
+import { useTranslation } from 'react-i18next';
 
 interface MonitoramentoProps {
   onNavigateToCRM: (customerId: string) => void;
@@ -64,6 +67,7 @@ const fmt = (n: number) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => {
+  const { t } = useTranslation(['monitoring', 'common']);
   const [selectedDate, setSelectedDate] = useState(toLocalDateString(new Date()));
 
   // ── Entradas ──────────────────────────────────────────────────────────────
@@ -92,6 +96,8 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
   // ── Modal WhatsApp para novos clientes ────────────────────────────────────
   const [waQueue, setWaQueue] = useState<Customer[]>([]);
   const [showWaModal, setShowWaModal] = useState(false);
+
+  const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
 
   // ── Subscriptions ─────────────────────────────────────────────────────────
 
@@ -344,6 +350,26 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
     onNavigateToCRM(toCustomerId(row.cliente));
   };
 
+  const handleOpenProntuario = (row: Registro) => {
+    const r: MedicalRecord = {
+      id: `rec_${Date.now()}`,
+      patientId: row.animal,
+      patientName: row.animal,
+      clientId: toCustomerId(row.cliente),
+      clientName: row.cliente,
+      professionalName: userProfile?.nome,
+      date: new Date().toISOString().substring(0, 10),
+      time: new Date().toTimeString().substring(0, 5),
+      chiefComplaint: '',
+      anamnesis: '',
+      diagnosis: '',
+      treatment: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setSelectedRecord(r);
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -354,16 +380,16 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Monitoramento Diário</h1>
+          <h1 className="text-3xl font-bold text-slate-800">{t('monitoring:title', 'Monitoramento Diário')}</h1>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-slate-500">Planilha de atendimentos e faturamento.</p>
+            <p className="text-slate-500">{t('monitoring:subtitle', 'Planilha de atendimentos e faturamento.')}</p>
             <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
               autoSaving 
                 ? 'bg-amber-50 text-amber-600 animate-pulse border border-amber-100' 
                 : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
             }`}>
               <div className={`w-1.5 h-1.5 rounded-full ${autoSaving ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-              {autoSaving ? 'Salvando...' : 'Sincronizado'}
+              {autoSaving ? t('monitoring:status_saving', 'Salvando...') : t('monitoring:status_synced', 'Sincronizado')}
             </div>
           </div>
         </div>
@@ -381,11 +407,11 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
         {/* Saldo Real */}
         <div className={`bg-white p-5 rounded-3xl shadow-sm border flex items-center justify-between col-span-2 lg:col-span-1 ${saldoReal < 0 ? 'border-red-200' : 'border-purple-100'}`}>
           <div>
-            <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Saldo Real</p>
+            <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">{t('monitoring:kpi_balance', 'Saldo Real')}</p>
             <h3 className={`text-xl font-bold mt-0.5 ${saldoReal < 0 ? 'text-red-500' : 'text-slate-800'}`}>
               {fmt(saldoReal)}
             </h3>
-            <p className="text-[10px] font-medium text-slate-400">entradas − despesas</p>
+            <p className="text-[10px] font-medium text-slate-400">{t('monitoring:kpi_balance_sub', 'entradas − despesas')}</p>
           </div>
           <div className={`p-3 rounded-2xl ${saldoReal < 0 ? 'bg-red-50' : 'bg-primary/10'}`}>
             <DollarSign className={`w-6 h-6 ${saldoReal < 0 ? 'text-red-400' : 'text-primary'}`} />
@@ -447,9 +473,9 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
         {/* Total Despesas */}
         <div className="bg-white p-5 rounded-3xl shadow-sm border border-red-100 flex items-center justify-between">
           <div>
-            <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Despesas</p>
+            <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">{t('monitoring:kpi_expenses', 'Despesas')}</p>
             <h3 className="text-xl font-bold text-slate-800 mt-0.5">{fmt(totalDespesas)}</h3>
-            <p className="text-red-400 text-[10px] font-medium">saídas do dia</p>
+            <p className="text-red-400 text-[10px] font-medium">{t('monitoring:kpi_expenses_sub', 'saídas do dia')}</p>
           </div>
           <div className="p-3 bg-red-50 rounded-2xl">
             <TrendingDown className="w-6 h-6 text-red-400" />
@@ -472,7 +498,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
       <div className="bg-white rounded-3xl shadow-sm border border-purple-100 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-purple-50">
           <h2 className="font-semibold text-slate-700 text-lg">
-            Lançamentos do Dia
+            {t('monitoring:table_title', 'Lançamentos do Dia')}
             <span className="ml-2 text-sm text-slate-400 font-normal">({rows.length})</span>
           </h2>
           <button
@@ -480,7 +506,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
             className="flex items-center space-x-2 px-4 py-2 bg-secondary/10 text-secondary font-medium rounded-xl hover:bg-secondary/20 transition-colors"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>Novo Lançamento</span>
+            <span>{t('monitoring:btn_new_entry', 'Novo Lançamento')}</span>
           </button>
         </div>
 
@@ -488,14 +514,14 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
           <table className="w-full text-left min-w-[960px]">
             <thead>
               <tr className="bg-purple-50/60 text-slate-500 text-xs uppercase tracking-wider">
-                <th className="px-4 py-3 font-medium">Cliente</th>
-                <th className="px-4 py-3 font-medium">Paciente</th>
-                <th className="px-4 py-3 font-medium">Procedimento</th>
-                <th className="px-4 py-3 font-medium">Maquininha</th>
-                <th className="px-4 py-3 font-medium">Pagamento</th>
-                <th className="px-4 py-3 font-medium text-right">Valor R$</th>
-                <th className="px-4 py-3 font-medium text-center">Status</th>
-                <th className="px-4 py-3 font-medium">Observações</th>
+                <th className="px-4 py-3 font-medium">{t('monitoring:col_client', 'Cliente')}</th>
+                <th className="px-4 py-3 font-medium">{t('monitoring:col_patient', 'Paciente')}</th>
+                <th className="px-4 py-3 font-medium">{t('monitoring:col_procedure', 'Procedimento')}</th>
+                <th className="px-4 py-3 font-medium">{t('monitoring:col_payment_method', 'Maquininha')}</th>
+                <th className="px-4 py-3 font-medium">{t('monitoring:col_payment_type', 'Pagamento')}</th>
+                <th className="px-4 py-3 font-medium text-right">{t('monitoring:col_value', 'Valor R$')}</th>
+                <th className="px-4 py-3 font-medium text-center">{t('monitoring:col_status', 'Status')}</th>
+                <th className="px-4 py-3 font-medium">{t('monitoring:col_notes', 'Observações')}</th>
                 <th className="px-4 py-3 font-medium w-10"></th>
               </tr>
             </thead>
@@ -503,7 +529,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={9} className="text-center py-12 text-slate-400 text-sm">
-                    Nenhum lançamento. Clique em "Novo Lançamento" ou busque um cliente acima.
+                    {t('monitoring:empty_entries', 'Nenhum lançamento.')}
                   </td>
                 </tr>
               )}
@@ -541,13 +567,22 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
                           </div>
                         )}
                       </div>
-                      <button
-                        onClick={() => row.cliente && handleCRMLink(row)}
-                        title="Abrir no CRM"
-                        className="text-primary hover:text-pink-600 p-1 rounded-full hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        <UserCheck className="w-4 h-4" />
-                      </button>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => row.cliente && handleCRMLink(row)}
+                          title="Abrir no CRM"
+                          className="text-primary hover:text-pink-600 p-1 rounded-full hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <UserCheck className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => row.cliente && handleOpenProntuario(row)}
+                          title="Abrir Prontuário"
+                          className="text-indigo-600 hover:text-indigo-800 p-1 rounded-full hover:bg-indigo-50 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </td>
 
@@ -650,7 +685,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
         <div className="px-6 py-4 border-t border-purple-50 flex items-center justify-between bg-purple-50/30 flex-wrap gap-3">
           <div className="flex items-center space-x-2">
             <UserPlus className="w-4 h-4 text-slate-400" />
-            <span className="text-xs text-slate-400">Clique no ícone rosa para abrir o CRM do cliente</span>
+            <span className="text-xs text-slate-400">{t('monitoring:hint_crm', 'Clique no ícone rosa para abrir o CRM do cliente')}</span>
           </div>
           <div className="flex items-center gap-3">
             {autoSaving && (
@@ -669,7 +704,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
               disabled={saving || rows.length === 0 || !canDelete(userProfile?.role)}
               className="px-5 py-3 text-red-500 hover:text-red-700 font-semibold text-sm transition-colors rounded-2xl hover:bg-red-50 disabled:opacity-30"
             >
-              Limpar Tudo
+              {t('monitoring:btn_clear_all', 'Limpar Tudo')}
             </button>
             <button
               onClick={handleSave}
@@ -677,7 +712,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
               className="flex items-center space-x-2 px-6 py-3 bg-primary text-white font-semibold rounded-2xl hover:bg-pink-600 transition-colors shadow-md shadow-primary/30 disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              <span>{saving ? 'Gravando...' : 'Gravar Lançamentos'}</span>
+              <span>{saving ? t('monitoring:status_saving', 'Salvando...') : t('monitoring:btn_save', 'Gravar Lançamentos')}</span>
             </button>
           </div>
         </div>
@@ -697,7 +732,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
             </div>
             <div className="text-left">
               <h2 className="font-semibold text-slate-700 text-lg">
-                Saídas do Dia
+                {t('monitoring:expenses_title', 'Saídas do Dia')}
                 <span className="ml-2 text-sm text-slate-400 font-normal">({despesas.length})</span>
               </h2>
               {!despesasExpanded && totalDespesas > 0 && (
@@ -712,7 +747,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-500 text-sm font-medium rounded-xl hover:bg-red-100 transition-colors cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4" />
-                Nova Despesa
+                {t('monitoring:btn_new_expense', 'Nova Despesa')}
               </span>
             )}
             {despesasExpanded
@@ -729,10 +764,10 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
               <table className="w-full text-left min-w-[640px]">
                 <thead>
                   <tr className="bg-red-50/40 text-slate-500 text-xs uppercase tracking-wider">
-                    <th className="px-4 py-3 font-medium">Descrição</th>
-                    <th className="px-4 py-3 font-medium">Categoria</th>
-                    <th className="px-4 py-3 font-medium text-right">Valor R$</th>
-                    <th className="px-4 py-3 font-medium">Observações</th>
+                    <th className="px-4 py-3 font-medium">{t('monitoring:col_description', 'Descrição')}</th>
+                    <th className="px-4 py-3 font-medium">{t('monitoring:col_category', 'Categoria')}</th>
+                    <th className="px-4 py-3 font-medium text-right">{t('monitoring:col_value', 'Valor R$')}</th>
+                    <th className="px-4 py-3 font-medium">{t('monitoring:col_notes', 'Observações')}</th>
                     <th className="px-4 py-3 font-medium w-10"></th>
                   </tr>
                 </thead>
@@ -740,7 +775,7 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
                   {despesas.length === 0 && (
                     <tr>
                       <td colSpan={5} className="text-center py-10 text-slate-400 text-sm">
-                        Nenhuma despesa registrada. Clique em "Nova Despesa" para adicionar.
+                        {t('monitoring:empty_expenses', 'Nenhuma despesa registrada.')}
                       </td>
                     </tr>
                   )}
@@ -861,6 +896,13 @@ const Monitoramento = ({ onNavigateToCRM, userProfile }: MonitoramentoProps) => 
           customerName={waQueue[0].nome}
           onSave={handleSaveWhatsApp}
           onSkip={skipWhatsApp}
+        />
+      )}
+
+      {selectedRecord && (
+        <ProntuarioModal 
+          initialRecord={selectedRecord}
+          onClose={() => setSelectedRecord(null)}
         />
       )}
     </div>

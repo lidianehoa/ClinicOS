@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, X, Send, Paperclip, Trash2, FileText, Loader2, ChevronDown, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { callGemini, SYSTEM_PROMPT, type GeminiMessage } from '../services/aiService';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ const WELCOME_MSG: Message = {
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 const AIChat = () => {
+  const { t } = useTranslation(['common']);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([WELCOME_MSG]);
   const [input, setInput] = useState('');
@@ -184,7 +186,7 @@ const AIChat = () => {
         }`}
       >
         {open ? <X className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-        <span className="text-sm font-semibold hidden sm:inline">{open ? 'Fechar' : 'Dra. Elisa'}</span>
+        <span className="text-sm font-semibold hidden sm:inline">{open ? t('common:close', 'Fechar') : 'Dra. Elisa'}</span>
         {!open && messages.length > 1 && (
           <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-emerald-400 rounded-full text-xs font-bold flex items-center justify-center text-white">
             {messages.filter(m => m.role === 'assistant').length}

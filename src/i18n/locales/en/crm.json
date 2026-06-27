@@ -1,0 +1,18 @@
+{
+  "title": "CRM",
+  "clients": "Clients",
+  "patients": "Patients",
+  "new_client": "New Client",
+  "new_patient": "New Patient",
+  "client_details": "Client Details",
+  "patient_details": "Patient Record",
+  "history": "History",
+  "pet_name": "Pet name",
+  "breed": "Breed",
+  "sex": "Sex",
+  "age": "Age",
+  "weight": "Weight",
+  "client_name": "Owner name",
+  "document": "ID Document",
+  "client_since": "Client since"
+}

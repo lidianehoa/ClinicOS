@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper Functions ──────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ── Main Data Namespace ───────────────────────────────────────────────────
+    // Protects the main data namespace per tenant.
+    // All clinic operational data lives here (customers, records, appointments…)
+    match /artifacts/{tenantId}/public/data/{collection}/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── Settings & Config Namespace ───────────────────────────────────────────
+    // Clinic configuration, user profiles, services, staff, etc.
+    match /bea_data/{tenantId}/{collection}/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── Notifications Log ─────────────────────────────────────────────────────
+    // WhatsApp dispatch logs (top-level collection)
+    match /notifications_log/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── Medical Records (root-level collection) ───────────────────────────────
+    // Prontuários stored at /records/{id} — requires authentication.
+    match /records/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── Deny everything else ──────────────────────────────────────────────────
+    // Default-deny for any path not explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

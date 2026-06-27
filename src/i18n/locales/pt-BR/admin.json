@@ -1,0 +1,10 @@
+{
+  "title": "Admin Console",
+  "system_alerts": "Alertas do Sistema",
+  "audit_log": "Log de Auditoria",
+  "tenant_management": "Gestão de Instâncias (Tenants)",
+  "active_users": "Usuários Ativos",
+  "system_health": "Saúde do Sistema",
+  "database_usage": "Uso do Banco de Dados",
+  "storage_usage": "Uso de Armazenamento"
+}

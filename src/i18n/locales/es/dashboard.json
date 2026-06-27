@@ -1,0 +1,20 @@
+{
+  "title": "Panel",
+  "welcome": "Buenos días",
+  "kpi_revenue": "Facturación",
+  "kpi_expenses": "Gastos",
+  "kpi_balance": "Saldo Real",
+  "kpi_avg_ticket": "Ticket Promedio",
+  "kpi_appointments": "Atenciones",
+  "kpi_new_clients": "Nuevos Clientes",
+  "kpi_return_rate": "Tasa de Retorno",
+  "period_today": "Hoy",
+  "period_week": "Esta semana",
+  "period_month": "Este mes",
+  "revenue_chart": "Facturación por período",
+  "top_services": "Servicios más realizados",
+  "recent_activity": "Actividad reciente",
+  "stock_alerts": "Alertas de inventario",
+  "stock_alert_msg": "productos por debajo del stock mínimo",
+  "view_all_alerts": "Ver todas las alertas"
+}

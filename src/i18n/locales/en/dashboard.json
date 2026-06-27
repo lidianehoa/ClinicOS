@@ -1,0 +1,20 @@
+{
+  "title": "Dashboard",
+  "welcome": "Good morning",
+  "kpi_revenue": "Revenue",
+  "kpi_expenses": "Expenses",
+  "kpi_balance": "Net Balance",
+  "kpi_avg_ticket": "Average Ticket",
+  "kpi_appointments": "Appointments",
+  "kpi_new_clients": "New Clients",
+  "kpi_return_rate": "Return Rate",
+  "period_today": "Today",
+  "period_week": "This week",
+  "period_month": "This month",
+  "revenue_chart": "Revenue by period",
+  "top_services": "Top services",
+  "recent_activity": "Recent activity",
+  "stock_alerts": "Stock alerts",
+  "stock_alert_msg": "products below minimum stock",
+  "view_all_alerts": "View all alerts"
+}

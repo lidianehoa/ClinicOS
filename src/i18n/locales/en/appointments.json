@@ -1,0 +1,16 @@
+{
+  "title": "Appointments",
+  "calendar": "Calendar",
+  "new_appointment": "New Appointment",
+  "schedule": "Schedule",
+  "reschedule": "Reschedule",
+  "cancel": "Cancel Appointment",
+  "service": "Service",
+  "professional": "Professional",
+  "status_scheduled": "Scheduled",
+  "status_confirmed": "Confirmed",
+  "status_cancelled": "Cancelled",
+  "status_completed": "Completed",
+  "select_date": "Select date",
+  "select_time": "Select time"
+}

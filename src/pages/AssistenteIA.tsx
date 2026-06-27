@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Bot, MessageCircle, TrendingUp, Send, Copy, Check, Sparkles } from 'lucide-react';
-import { subscribeAllDailyFlows, subscribeAllDespesas, toLocalDateString, canDelete, type Registro, type Despesa, type AppUser } from '../services/dataService';
-import { callGemini, SYSTEM_PROMPT } from '../services/aiService';
+import { subscribeAllDailyFlows, subscribeAllDespesas, toLocalDateString, canDelete, type Registro, type Despesa, type AppUser, getIntegrationsConfig } from '../services/dataService';
+import { callGemini, SYSTEM_PROMPT, AI_ENABLED } from '../services/aiService';
+import { useTranslation } from 'react-i18next';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -23,8 +24,17 @@ const pf  = (v: any)   => parseFloat(String(v || '0').replace(',', '.'));
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 const AssistenteIA = ({ userProfile }: { userProfile: AppUser | null }) => {
+  const { t } = useTranslation(['common']);
   const [aba, setAba] = useState<AbaIA>('mensagens');
   const [loading, setLoading] = useState(false);
+  const [hasKey, setHasKey] = useState(false);
+  const isPt = navigator.language.startsWith('pt');
+
+  useEffect(() => {
+    getIntegrationsConfig().then(data => {
+      if (data && data.geminiApiKey) setHasKey(true);
+    });
+  }, []);
 
   // Dados financeiros
   const [allRecords, setAllRecords]   = useState<Registro[]>([]);
@@ -108,10 +118,74 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  
+  if (!AI_ENABLED) {
+    const bulletsEn = [
+      'Suggested responses for client messages (WhatsApp/Email)',
+      'Clinical protocol review and consultation',
+      'Quick information lookup during appointments',
+      'Automated summary of patient history'
+    ];
+  
+    const bulletsPt = [
+      'Respostas sugeridas para mensagens de clientes (WhatsApp/Email)',
+      'Revisão e consulta de protocolos clínicos',
+      'Busca rápida de informações durante as consultas',
+      'Resumo automático do histórico de pacientes'
+    ];
+  
+    const bullets = isPt ? bulletsPt : bulletsEn;
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[80vh] text-center animate-fade-in pb-10">
+        <div className="w-full max-w-2xl bg-white border-2 border-dashed border-slate-300 rounded-3xl p-12 flex flex-col items-center shadow-sm">
+          <Sparkles className="w-20 h-20 text-slate-400 opacity-40 mb-6" />
+          <h2 className="text-2xl font-bold text-slate-700 mb-2">
+            {t('common:ai.ready_to_activate', isPt ? 'Assistente IA — Pronto para ativar' : 'AI Assistant — Ready to activate')}
+          </h2>
+          
+          {!hasKey && (
+            <div className="text-left text-slate-500 mb-8 mt-6 bg-slate-50 border border-slate-100 p-6 rounded-2xl w-full">
+              <p className="font-semibold mb-3 text-slate-600">
+                {isPt 
+                  ? 'Este módulo integra-se ao Google Gemini (GenAI) para auxiliar sua equipe com:'
+                  : 'This module integrates with Google Gemini (GenAI) to assist your team with:'}
+              </p>
+              <ul className="space-y-2 list-disc list-inside text-sm">
+                {bullets.map((b, i) => <li key={i}>{b}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {hasKey ? (
+            <p className="text-slate-600 mb-8 font-medium">
+              {isPt 
+                ? 'Assistente IA está configurado. Reinicie o aplicativo para ativar.'
+                : 'AI Assistant is configured. Restart the app to activate.'}
+            </p>
+          ) : (
+            <p className="text-slate-500 mb-8">
+              {isPt 
+                ? 'Adicione sua chave de API do Google GenAI em Configurações → Integrações para ativar o assistente inteligente da clínica.'
+                : 'Add your Google GenAI API key in Settings → Integrations to enable the AI assistant for your clinic.'}
+            </p>
+          )}
+
+          <button 
+            onClick={() => { window.location.search = '?tab=configuracoes' }}
+            className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2"
+          >
+            {isPt ? 'Configurar API Key' : 'Configure API Key'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in pb-10">
       <header className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-200">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-purple-600 flex items-center justify-center shadow-lg shadow-teal-200">
           <Bot className="w-7 h-7 text-white" />
         </div>
         <div>
@@ -140,14 +214,14 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-3xl shadow-sm border border-purple-100 p-6 space-y-5">
             <h2 className="font-semibold text-slate-700 text-lg flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-violet-500" />Configure a mensagem
+              <Sparkles className="w-4 h-4 text-teal-500" />Configure a mensagem
             </h2>
             <div>
               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Tipo</label>
               <div className="grid grid-cols-2 gap-2">
                 {TIPOS.map(t => (
                   <button key={t.id} onClick={() => setTipo(t.id)}
-                    className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${tipo === t.id ? 'border-violet-400 bg-violet-50 text-violet-700 font-semibold' : 'border-slate-200 text-slate-600 hover:border-violet-200'}`}>
+                    className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${tipo === t.id ? 'border-teal-400 bg-teal-50 text-teal-700 font-semibold' : 'border-slate-200 text-slate-600 hover:border-teal-200'}`}>
                     <span className="mr-1.5">{t.emoji}</span>{t.label}
                     <span className="block text-[10px] text-slate-400 mt-0.5">{t.desc}</span>
                   </button>
@@ -157,29 +231,29 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
             <div>
               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Nome do cliente *</label>
               <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Maria Silva"
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400" />
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Nome do paciente</label>
                 <input value={animal} onChange={e => setAnimal(e.target.value)} placeholder="Ex: Paciente A"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400" />
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400" />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Procedimento</label>
                 <input value={proc} onChange={e => setProc(e.target.value)} placeholder="Ex: Consulta clínica"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400" />
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400" />
               </div>
             </div>
             {tipo === 'livre' && (
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Instrução</label>
                 <textarea value={instrucao} onChange={e => setInstrucao(e.target.value)} rows={3} placeholder="Descreva o que quer comunicar..."
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 resize-none" />
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 resize-none" />
               </div>
             )}
             <button onClick={gerarMensagem} disabled={loading || !nome.trim()}
-              className="w-full py-3.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white font-semibold rounded-2xl hover:opacity-90 transition-opacity shadow-lg shadow-violet-200 disabled:opacity-50 flex items-center justify-center gap-2">
+              className="w-full py-3.5 bg-gradient-to-r from-teal-500 to-purple-600 text-white font-semibold rounded-2xl hover:opacity-90 transition-opacity shadow-lg shadow-teal-200 disabled:opacity-50 flex items-center justify-center gap-2">
               {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Gerando...</> : <><Sparkles className="w-4 h-4" />Gerar Mensagem</>}
             </button>
           </div>
@@ -198,8 +272,8 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
               <div className="flex-1 bg-slate-50 rounded-2xl p-4 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap border border-slate-100">{resultado}</div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-400 gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center">
-                  <MessageCircle className="w-8 h-8 text-violet-300" />
+                <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center">
+                  <MessageCircle className="w-8 h-8 text-teal-300" />
                 </div>
                 <p className="text-sm">Preencha os dados ao lado<br />e clique em "Gerar Mensagem"</p>
               </div>
@@ -213,7 +287,7 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="space-y-3">
             <h2 className="font-semibold text-slate-700 flex items-center gap-2 text-sm">
-              <TrendingUp className="w-4 h-4 text-violet-500" />Dados enviados à IA
+              <TrendingUp className="w-4 h-4 text-teal-500" />Dados enviados à IA
             </h2>
             {[
               ['Faturamento mês', fmt(kpisCtx.fat), 'emerald'],
@@ -233,8 +307,8 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
 
           <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-purple-100 flex flex-col" style={{ minHeight: 500 }}>
             <div className="px-6 py-4 border-b border-purple-50 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center">
-                <Bot className="w-4 h-4 text-violet-600" />
+              <div className="w-8 h-8 rounded-xl bg-teal-100 flex items-center justify-center">
+                <Bot className="w-4 h-4 text-teal-600" />
               </div>
               <div>
                 <p className="font-semibold text-slate-700 text-sm">Dra. Elisa — Consultora Financeira</p>
@@ -245,14 +319,14 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               {chat.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center text-slate-400 gap-3 py-12">
-                  <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center">
-                    <TrendingUp className="w-8 h-8 text-violet-300" />
+                  <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center">
+                    <TrendingUp className="w-8 h-8 text-teal-300" />
                   </div>
                   <p className="text-sm font-medium text-slate-500">Pergunte sobre as finanças da clínica</p>
                   <div className="flex flex-wrap gap-2 justify-center mt-1">
                     {['Qual meu lucro bruto este mês?', 'Como está meu ticket médio?', 'As despesas estão sob controle?'].map(q => (
                       <button key={q} onClick={() => { setPergunta(q); }}
-                        className="text-xs px-3 py-1.5 bg-violet-50 text-violet-600 rounded-full border border-violet-100 hover:bg-violet-100 transition-colors">
+                        className="text-xs px-3 py-1.5 bg-teal-50 text-teal-600 rounded-full border border-teal-100 hover:bg-teal-100 transition-colors">
                         {q}
                       </button>
                     ))}
@@ -261,23 +335,23 @@ Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp
               )}
               {chat.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary text-white rounded-tr-sm' : 'bg-violet-50 text-slate-700 rounded-tl-sm border border-violet-100'}`}>
+                  <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary text-white rounded-tr-sm' : 'bg-teal-50 text-slate-700 rounded-tl-sm border border-teal-100'}`}>
                     {m.content}
                   </div>
                 </div>
               ))}
               {loading && (
                 <div className="flex justify-start">
-                  <div className="bg-violet-50 border border-violet-100 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
-                    {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />)}
-                    <span className="text-xs text-violet-500 ml-1">Analisando...</span>
+                  <div className="bg-teal-50 border border-teal-100 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
+                    {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />)}
+                    <span className="text-xs text-teal-500 ml-1">Analisando...</span>
                   </div>
                 </div>
               )}
             </div>
 
             <div className="px-5 py-4 border-t border-purple-50">
-              <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-500/10 transition-all">
+              <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-500/10 transition-all">
                 <input value={pergunta} onChange={e => setPergunta(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !loading && perguntar()}
                   placeholder="Pergunte sobre as finanças da clínica..."

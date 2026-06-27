@@ -1,0 +1,12 @@
+{
+  "title": "Historiales",
+  "medical_record": "Historial Médico",
+  "clinical_history": "Historial Clínico",
+  "vaccines": "Vacunas",
+  "exams": "Exámenes",
+  "prescriptions": "Recetas",
+  "export_pdf": "Exportar PDF",
+  "print_record": "Imprimir Historial",
+  "documents": "Documentos y Adjuntos",
+  "upload_exam": "Adjuntar Examen"
+}

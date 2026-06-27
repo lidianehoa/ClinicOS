@@ -1,0 +1,13 @@
+{
+  "title": "Conciliación Bancaria",
+  "import_ofx": "Importar OFX",
+  "bank_statement": "Estado de Cuenta",
+  "system_entries": "Registros del Sistema",
+  "status_matched": "Conciliado",
+  "status_pending": "Pendiente",
+  "status_divergent": "Divergente",
+  "match_found": "Coincidencia Encontrada",
+  "manual_match": "Conciliar Manualmente",
+  "ignore_transaction": "Ignorar Transacción",
+  "reconcile_all": "Conciliar Seleccionados"
+}

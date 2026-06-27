@@ -8,6 +8,7 @@ import { storage } from '../services/firebase';
 import { ref, uploadBytes } from 'firebase/storage';
 import { saveDailyFlow, batchSaveCustomers, batchSaveProdutos, toCustomerId, toLocalDateString, canDelete } from '../services/dataService';
 import type { Animal, Customer, AppUser } from '../services/dataService';
+import { useTranslation } from 'react-i18next';
 
 interface ImportadorDadosProps {
   onNavigateToCRM?: () => void;
@@ -90,6 +91,7 @@ function DropZone({
 // ── Componente principal ───────────────────────────────────────────────────────
 
 const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps) => {
+  const { t } = useTranslation(['admin', 'common']);
   const [activeTab, setActiveTab] = useState<TabType>('clientes');
 
   // ── Estado: clientes ────────────────────────────────────────────────────────
@@ -532,9 +534,9 @@ const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps)
   return (
     <div className="space-y-6 animate-fade-in max-w-5xl mx-auto pb-20">
       <header className="text-center">
-        <h1 className="text-3xl font-bold text-slate-800">Importação de Dados Externos</h1>
+        <h1 className="text-3xl font-bold text-slate-800">{t('admin:import.title', 'Importação de Dados Externos')}</h1>
         <p className="text-slate-500 mt-2">
-          Importe seus dados exportados do sistema anterior (delimitador: <code className="bg-purple-50 px-1 rounded">;</code>)
+          {t('admin:import.subtitle', 'Importe seus dados exportados do sistema anterior')} (delimitador: <code className="bg-purple-50 px-1 rounded">;</code>)
         </p>
       </header>
       
@@ -796,7 +798,7 @@ const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps)
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: 'Total', value: statsP.total, icon: <Package className="w-5 h-5 text-secondary" />, color: 'bg-purple-50' },
-                { label: 'Serviços', value: statsP.servicos, icon: <BarChart2 className="w-5 h-5 text-blue-500" />, color: 'bg-blue-50' },
+                { label: 'Serviços', value: statsP.servicos, icon: <BarChart2 className="w-5 h-5 text-teal-500" />, color: 'bg-blue-50' },
                 { label: 'Produtos', value: statsP.produtos, icon: <Package className="w-5 h-5 text-emerald-500" />, color: 'bg-emerald-50' },
                 { label: 'Com preço', value: statsP.comPreco, icon: <CheckCircle className="w-5 h-5 text-amber-500" />, color: 'bg-amber-50' },
               ].map(c => (
@@ -833,7 +835,7 @@ const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps)
                         <td className="px-4 py-3 text-slate-400 text-xs font-mono">{row.codigo || '—'}</td>
                         <td className="px-4 py-3 font-medium text-slate-800">{row.nome}</td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${row.tipo === 'Serviço' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-secondary'}`}>{row.tipo}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${row.tipo === 'Serviço' ? 'bg-blue-50 text-teal-600' : 'bg-purple-50 text-secondary'}`}>{row.tipo}</span>
                         </td>
                         <td className="px-4 py-3 text-right font-semibold text-slate-800">
                           {row.venda != null ? row.venda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}

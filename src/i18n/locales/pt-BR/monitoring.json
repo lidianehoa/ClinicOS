@@ -1,0 +1,18 @@
+{
+  "title": "Monitoramento",
+  "queue": "Fila de Atendimento",
+  "waiting": "Aguardando",
+  "in_consultation": "Em consulta",
+  "in_observation": "Em observação",
+  "hospitalized": "Internado",
+  "discharged": "Alta médica",
+  "add_patient": "Adicionar paciente",
+  "open_record": "Abrir prontuário",
+  "change_status": "Alterar status",
+  "time_waiting": "Tempo de espera",
+  "patient": "Paciente",
+  "owner": "Tutor / Responsável",
+  "species": "Espécie",
+  "reason": "Motivo",
+  "empty_queue": "Nenhum paciente na fila"
+}

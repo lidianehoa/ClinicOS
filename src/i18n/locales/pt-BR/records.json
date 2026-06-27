@@ -1,0 +1,12 @@
+{
+  "title": "Prontuários",
+  "medical_record": "Prontuário Médico",
+  "clinical_history": "Histórico Clínico",
+  "vaccines": "Vacinas",
+  "exams": "Exames",
+  "prescriptions": "Receitas",
+  "export_pdf": "Exportar PDF",
+  "print_record": "Imprimir Prontuário",
+  "documents": "Documentos e Anexos",
+  "upload_exam": "Anexar Exame"
+}

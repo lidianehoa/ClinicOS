@@ -1,0 +1,9 @@
+{
+  "title": "Initial Setup",
+  "welcome_setup": "Welcome to ClinicOS!",
+  "step_1": "Configure Clinic Data",
+  "step_2": "Import Products and Services",
+  "step_3": "Invite Team",
+  "finish_setup": "Finish Setup",
+  "demo_access": "Demo Access"
+}

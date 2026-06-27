@@ -1,0 +1,12 @@
+{
+  "title": "Settings",
+  "clinic_data": "Clinic Data",
+  "integrations": "Integrations",
+  "users_roles": "Users and Roles",
+  "billing": "Billing and Subscription",
+  "whatsapp_api": "WhatsApp API",
+  "payment_gateway": "Payment Gateway",
+  "logo": "Clinic Logo",
+  "business_hours": "Business Hours",
+  "save_settings": "Save Settings"
+}

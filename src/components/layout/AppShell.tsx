@@ -12,6 +12,7 @@ interface AppShellProps {
 }
 
 const AppShell = ({ activeTab, setActiveTab, userProfile, onLogout, children }: AppShellProps) => {
+  // No translations needed in AppShell yet
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ backgroundColor: '#FDFCFE' }}>
       <Sidebar 

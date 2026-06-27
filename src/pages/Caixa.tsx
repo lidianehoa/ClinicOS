@@ -3,15 +3,20 @@ import {
   Lock, Unlock, CheckCircle, ChevronDown, ChevronUp, ChevronRight,
   Clock, ShoppingCart, Search, Trash2, Plus, Minus, Check, X, Filter,
   Receipt, FileText, Dog, Loader2, CreditCard, Banknote, QrCode,
-  Smartphone, History, RotateCcw
+  Smartphone, History, RotateCcw, AlertCircle
 } from 'lucide-react';
 import {
-  abrirCaixa, fecharCaixa, reabrirCaixa, subscribeCaixa, subscribeProdutos, subscribeCustomers, registrarVenda, deleteVenda,
-  type CaixaDia, type Produto, type VendaItem, type AppUser, type Customer, type MovimentoCaixa
+  abrirCaixa, fecharCaixa, reabrirCaixa, subscribeCaixa, subscribeProducts, subscribeCustomers, registrarVenda, deleteVenda, subscribeServices, APP_ID,
+  type CaixaDia, type Product, type Produto, type VendaItem, type AppUser, type Customer, type MovimentoCaixa, type ClinicService
 } from '../services/dataService';
 import { emitirDocumentoFiscal } from '../services/nfeService';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+import { collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import { useTranslation } from 'react-i18next';
 
 const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
+  const { t } = useTranslation(['cashier', 'common']);
   const isPdvMode = new URLSearchParams(window.location.search).get('mode') === 'pdv';
   const [caixa, setCaixa] = useState<CaixaDia | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +46,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<{type: 'loading'|'success'|'error'|'warning', message: string} | null>(null);
 
   // Search State - Clientes
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -75,17 +81,167 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
     return () => unsub();
   }, []);
 
+  // Integração com Agendamentos: preencher dados via URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const serviceId = params.get('serviceId');
+    const cName = params.get('clientName');
+    const aName = params.get('animalName');
+
+    if (cName) setClienteNome(decodeURIComponent(cName));
+    if (aName) setAnimalNome(decodeURIComponent(aName));
+
+    if (serviceId) {
+       const unsub = subscribeServices((all) => {
+          const s = all.find(x => x.id === serviceId);
+          if (s) {
+            setCart(prev => {
+              if (prev.some(p => p.id === s.id)) return prev;
+              return [...prev, {
+                id: s.id,
+                nome: s.name,
+                codigo: 'SRV',
+                tipo: 'Serviço',
+                marca: s.category,
+                venda: s.price,
+                estoque: 999,
+                situacao: 'ativo',
+                grupo: 'Serviços',
+                unidade: 'UN',
+                proposito: null,
+                controlaEstoque: false,
+                custo: 0,
+                codigoBarra: null,
+                quantidade: 1
+              } as any];
+            });
+          }
+       });
+       return () => unsub();
+    }
+  }, []);
+
+  // Barcode Scanner Logic
+  const handleBarcodeScan = async (barcode: string) => {
+    setScanFeedback({ type: 'loading', message: `Buscando: ${barcode}...` });
+
+    try {
+      const q = query(
+        collection(db, 'artifacts', APP_ID, 'public', 'data', 'products'),
+        where('barcode', '==', barcode),
+        where('status', '==', 'active'),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      
+      if (snap.empty) {
+        setScanFeedback({ type: 'error', message: `❌ Código não encontrado: ${barcode}` });
+      } else {
+        const docSnap = snap.docs[0];
+        const p = { id: docSnap.id, ...docSnap.data() } as Product;
+        
+        if (p.salePrice === 0) {
+          setScanFeedback({ type: 'warning', message: `⚠️ ${p.name} — Uso interno apenas` });
+        } else {
+          const produto: Produto = {
+            id: p.id,
+            nome: p.name,
+            codigo: p.internalCode || '',
+            codigoBarra: p.barcode || null,
+            tipo: p.type === 'service' ? 'Serviço' : 'Produto',
+            marca: p.brand || null,
+            venda: p.salePrice,
+            estoque: p.currentStock || 0,
+            situacao: 'ativo',
+            grupo: p.group || '',
+            unidade: p.unit || 'UN',
+            proposito: p.purpose || null,
+            controlaEstoque: p.controlsStock,
+            custo: p.costPrice || 0
+          };
+          
+          handleAddToCart(produto);
+          setScanFeedback({ type: 'success', message: `✅ ${p.name} — R$ ${p.salePrice.toFixed(2)}` });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setScanFeedback({ type: 'error', message: `❌ Erro ao buscar código: ${barcode}` });
+    }
+
+    setTimeout(() => setScanFeedback(null), 3000);
+  };
+
+  useBarcodeScanner({
+    onScan: handleBarcodeScan,
+    enabled: true
+  });
+
   useEffect(() => {
     if (searchQuery.length > 1) {
-      const unsub = subscribeProdutos((all) => {
-        const filtered = all.filter(p => 
-          p.nome.toLowerCase().includes(searchQuery.toLowerCase()) || 
-          p.codigo.toLowerCase().includes(searchQuery.toLowerCase())
+      let allProds: Product[] = [];
+      let allServs: ClinicService[] = [];
+      
+      const filterAndSet = () => {
+        const queryStr = searchQuery.toLowerCase();
+        
+        const servsAsProds: Produto[] = allServs.filter(s => s.status === 'Active').map(s => ({
+          id: s.id,
+          nome: s.name,
+          codigo: 'SRV',
+          tipo: 'Serviço',
+          marca: s.category,
+          venda: s.price,
+          estoque: 999,
+          situacao: 'ativo',
+          grupo: 'Serviços',
+          unidade: 'UN',
+          proposito: null,
+          controlaEstoque: false,
+          custo: 0,
+          codigoBarra: null
+        }));
+
+        const newProdsAsProds: Produto[] = allProds
+          .filter(p => p.status === 'active' && p.salePrice > 0)
+          .map(p => ({
+            id: p.id,
+            nome: p.name,
+            codigo: p.internalCode || '',
+            codigoBarra: p.barcode || null,
+            tipo: p.type === 'service' ? 'Serviço' : 'Produto',
+            marca: p.brand || null,
+            venda: p.salePrice,
+            estoque: p.currentStock || 0,
+            situacao: 'ativo',
+            grupo: p.group || '',
+            unidade: p.unit || 'UN',
+            proposito: p.purpose || null,
+            controlaEstoque: p.controlsStock,
+            custo: p.costPrice || 0
+          }));
+        
+        const combined = [...newProdsAsProds, ...servsAsProds];
+        const filtered = combined.filter(p => 
+          p.nome.toLowerCase().includes(queryStr) || 
+          (p.codigo || '').toLowerCase().includes(queryStr) ||
+          (p.codigoBarra || '').includes(queryStr)
         );
         setProdutos(filtered.slice(0, 8));
         setShowResults(true);
+      };
+
+      const unsubP = subscribeProducts((all) => {
+        allProds = all;
+        filterAndSet();
       });
-      return () => unsub();
+      
+      const unsubS = subscribeServices((all) => {
+        allServs = all;
+        filterAndSet();
+      });
+
+      return () => { unsubP(); unsubS(); };
     } else {
       setShowResults(false);
     }
@@ -363,11 +519,11 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
       {/* PAINEL ESQUERDO: NOVA VENDA */}
       <div className="flex-1 p-6 lg:p-8 space-y-6">
         <div className="flex items-center justify-between">
-           <h1 className="text-2xl font-bold text-slate-800">Ponto de Venda</h1>
+           <h1 className="text-2xl font-bold text-slate-800">{t('cashier:pos.title', 'Ponto de Venda')}</h1>
            <div className="flex items-center gap-3">
              <button 
                onClick={() => window.open(window.location.origin + '?tab=caixa', '_blank')}
-               className="flex items-center gap-2 text-xs font-bold text-sky-600 bg-sky-50 hover:bg-sky-100 px-3 py-1.5 rounded-lg border border-sky-100 transition-all shadow-sm"
+               className="flex items-center gap-2 text-xs font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-100 transition-all shadow-sm"
                title="Abrir outra aba para navegar no sistema"
              >
                <Plus className="w-3.5 h-3.5" />
@@ -398,7 +554,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                   onClick={() => handleEmitirNota('nfe')}
                   className="bg-white hover:bg-slate-50 text-slate-700 font-bold px-4 py-2 rounded-xl border border-slate-200 text-xs flex items-center gap-2 transition-all disabled:opacity-50"
                 >
-                  {isEmitting === 'nfe' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Receipt className="w-4 h-4 text-sky-500" />}
+                  {isEmitting === 'nfe' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Receipt className="w-4 h-4 text-teal-500" />}
                   Gerar NF-e (Produtos)
                 </button>
                 <button 
@@ -419,7 +575,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
             </div>
 
             {nfeStatus && (
-              <div className={`w-full mt-2 p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 ${nfeStatus.type === 'success' ? 'bg-sky-100 text-sky-700' : 'bg-red-100 text-red-700'}`}>
+              <div className={`w-full mt-2 p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 ${nfeStatus.type === 'success' ? 'bg-teal-100 text-teal-700' : 'bg-red-100 text-red-700'}`}>
                 {nfeStatus.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <X className="w-4 h-4" />}
                 {nfeStatus.msg}
               </div>
@@ -429,10 +585,10 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
 
         {/* MODAL DE GESTÃO DE VENDA ANTERIOR */}
         {selectedMov && (
-          <div className="bg-white border-2 border-sky-200 rounded-2xl p-6 animate-in slide-in-from-top-4 shadow-xl space-y-6">
+          <div className="bg-white border-2 border-teal-200 rounded-2xl p-6 animate-in slide-in-from-top-4 shadow-xl space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-sky-100 rounded-lg text-sky-600">
+                <div className="p-2 bg-teal-100 rounded-lg text-teal-600">
                   <Receipt className="w-6 h-6" />
                 </div>
                 <div>
@@ -467,7 +623,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
             <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-50">
               <button 
                 onClick={() => handleEmitirNota('nfe', selectedMov._id, { total: parseFloat(selectedMov.valor), clienteNome: selectedMov.descricao.split(' - ')[2] || 'Cliente' })}
-                className="bg-sky-500 hover:bg-sky-600 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
+                className="bg-teal-500 hover:bg-teal-600 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
               >
                 <Receipt className="w-4 h-4" /> Gerar NF-e
               </button>
@@ -490,8 +646,44 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
           </div>
         )}
 
+        {/* SCANNER FEEDBACK */}
+        <div className={`rounded-xl border shadow-sm p-4 flex items-center gap-4 transition-all ${
+          !scanFeedback ? 'bg-white border-slate-200' :
+          scanFeedback.type === 'loading' ? 'bg-amber-50 border-amber-200' :
+          scanFeedback.type === 'success' ? 'bg-emerald-50 border-emerald-200' :
+          scanFeedback.type === 'warning' ? 'bg-amber-50 border-amber-200' :
+          'bg-red-50 border-red-200'
+        }`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+            !scanFeedback ? 'bg-slate-100 text-slate-400' :
+            scanFeedback.type === 'loading' ? 'bg-amber-100 text-amber-600' :
+            scanFeedback.type === 'success' ? 'bg-emerald-100 text-emerald-600' :
+            scanFeedback.type === 'warning' ? 'bg-amber-100 text-amber-600' :
+            'bg-red-100 text-red-600'
+          }`}>
+            {!scanFeedback ? <QrCode className="w-5 h-5" /> :
+             scanFeedback.type === 'loading' ? <Loader2 className="w-5 h-5 animate-spin" /> :
+             scanFeedback.type === 'success' ? <CheckCircle className="w-5 h-5" /> :
+             scanFeedback.type === 'warning' ? <AlertCircle className="w-5 h-5" /> :
+             <X className="w-5 h-5" />}
+          </div>
+          <div className="flex-1">
+            {!scanFeedback ? (
+              <p className="font-bold text-slate-700 text-sm">Scanner pronto</p>
+            ) : (
+              <p className={`font-bold text-sm ${
+                scanFeedback.type === 'loading' ? 'text-amber-700' :
+                scanFeedback.type === 'success' ? 'text-emerald-700' :
+                scanFeedback.type === 'warning' ? 'text-amber-700' :
+                'text-red-700'
+              }`}>{scanFeedback.message}</p>
+            )}
+            {!scanFeedback && <p className="text-xs text-slate-500">Passe um produto na leitora de código de barras para adicionar ao carrinho.</p>}
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="bg-sky-500 px-6 py-3">
+          <div className="bg-teal-500 px-6 py-3">
              <h2 className="text-white font-bold text-sm uppercase tracking-wider">Nova venda</h2>
           </div>
 
@@ -503,7 +695,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                    type="date" 
                    value={selectedDate}
                    onChange={e => setSelectedDate(e.target.value)}
-                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:ring-2 focus:ring-sky-500/20 outline-none" 
+                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:ring-2 focus:ring-teal-500/20 outline-none" 
                  />
                </div>
                <div className="space-y-1.5">
@@ -521,7 +713,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                </div>
                <div className="space-y-1.5">
                  <label className="text-[10px] font-bold text-slate-400 uppercase">Tipo de venda*</label>
-                 <select className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:ring-2 focus:ring-sky-500/20 outline-none">
+                 <select className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:ring-2 focus:ring-teal-500/20 outline-none">
                    <option>Presencial, para consumidor final</option>
                    <option>Telefone / Entrega</option>
                  </select>
@@ -530,7 +722,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
 
             {/* Cliente Section */}
             <div className="space-y-3 relative">
-               <h3 className="text-sky-500 font-bold border-b border-sky-100 pb-2">Cliente</h3>
+               <h3 className="text-teal-500 font-bold border-b border-teal-100 pb-2">Cliente</h3>
                <div className="flex flex-wrap gap-3">
                  {/* Responsável */}
                  <div className="flex-1 min-w-[200px] relative">
@@ -542,7 +734,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                       setClienteNome(e.target.value);
                       if (selectedCustomer) setSelectedCustomer(null);
                     }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500/20 outline-none"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500/20 outline-none"
                    />
                    {selectedCustomer && (
                      <button 
@@ -561,14 +753,14 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                         <select 
                           value={animalNome}
                           onChange={e => setAnimalNome(e.target.value)}
-                          className="w-full bg-sky-50 border border-sky-200 text-sky-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500/20 outline-none appearance-none font-medium"
+                          className="w-full bg-teal-50 border border-teal-200 text-teal-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500/20 outline-none appearance-none font-medium"
                         >
                           {selectedCustomer.animais.map(a => (
                             <option key={a.nome} value={a.nome}>{a.nome}</option>
                           ))}
                         </select>
-                        <Dog className="w-3.5 h-3.5 absolute right-8 top-1/2 -translate-y-1/2 text-sky-400 pointer-events-none" />
-                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-sky-400 pointer-events-none" />
+                        <Dog className="w-3.5 h-3.5 absolute right-8 top-1/2 -translate-y-1/2 text-teal-400 pointer-events-none" />
+                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-teal-400 pointer-events-none" />
                      </div>
                    ) : (
                      <input 
@@ -576,7 +768,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                       placeholder="Animal"
                       value={animalNome}
                       onChange={e => setAnimalNome(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500/20 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500/20 outline-none"
                      />
                    )}
                  </div>
@@ -595,7 +787,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                      <button
                        key={c.id}
                        onClick={() => handleSelectCustomer(c)}
-                       className="w-full flex items-center justify-between p-4 hover:bg-sky-50 text-left transition-colors border-b border-slate-50 last:border-0"
+                       className="w-full flex items-center justify-between p-4 hover:bg-teal-50 text-left transition-colors border-b border-slate-50 last:border-0"
                      >
                        <div>
                          <p className="text-sm font-bold text-slate-700">{c.nome}</p>
@@ -612,14 +804,23 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
 
             {/* Produtos Section */}
             <div className="space-y-3 relative">
-               <h3 className="text-sky-500 font-bold border-b border-sky-100 pb-2">Produtos e Serviços</h3>
+               <h3 className="text-teal-500 font-bold border-b border-teal-100 pb-2">Produtos e Serviços</h3>
                <div className="relative group">
-                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-sky-500/20 transition-all">
+                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-teal-500/20 transition-all">
                    <input 
                     type="text" 
-                    placeholder="Produto, serviço ou pacote"
+                    placeholder="Produto, serviço ou código de barras"
+                    data-barcode-input="true"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && searchQuery.trim().length > 0) {
+                        handleBarcodeScan(searchQuery.trim());
+                        setSearchQuery('');
+                        setShowResults(false);
+                        e.preventDefault();
+                      }
+                    }}
                     className="flex-1 bg-transparent text-sm outline-none"
                    />
                    <Search className="w-4 h-4 text-slate-400" />
@@ -631,14 +832,24 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                        <button
                          key={p.id}
                          onClick={() => handleAddToCart(p)}
-                         className="w-full flex items-center justify-between p-4 hover:bg-sky-50 text-left transition-colors border-b border-slate-50 last:border-0"
+                         className="w-full flex items-center justify-between p-4 hover:bg-teal-50 text-left transition-colors border-b border-slate-50 last:border-0"
                        >
                          <div>
-                           <p className="text-sm font-bold text-slate-700">{p.nome}</p>
-                           <p className="text-[10px] text-slate-400 uppercase">{p.tipo} · {p.marca || 'S/ Marca'}</p>
+                           <p className="text-sm font-bold text-slate-700">
+                             {p.nome}
+                             {p.codigoBarra && <span className="ml-2 text-[10px] text-emerald-500">🔲</span>}
+                           </p>
+                           <div className="flex items-center gap-2 mt-0.5">
+                             {p.tipo === 'Serviço' ? (
+                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-100 text-teal-600 font-bold uppercase">Serviço</span>
+                             ) : (
+                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-600 font-bold uppercase">Produto</span>
+                             )}
+                             <p className="text-[10px] text-slate-400 uppercase">{p.marca || 'S/ Marca'}</p>
+                           </div>
                          </div>
                          <div className="text-right">
-                           <p className="text-sm font-bold text-sky-600">R$ {(p.venda ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                           <p className="text-sm font-bold text-teal-600">R$ {(p.venda ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                            <p className="text-[10px] text-slate-400">Estoque: {p.estoque}</p>
                          </div>
                        </button>
@@ -692,7 +903,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                      <tfoot className="bg-slate-50/50">
                         <tr>
                           <td colSpan={3} className="px-4 py-3 text-right font-bold text-slate-500">TOTAL:</td>
-                          <td className="px-4 py-3 text-right font-black text-lg text-sky-600">
+                          <td className="px-4 py-3 text-right font-black text-lg text-teal-600">
                             R$ {totalVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </td>
                           <td></td>
@@ -705,7 +916,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
 
             {/* Forma de Pagamento */}
             <div className="space-y-4">
-               <h3 className="text-sky-500 font-bold border-b border-sky-100 pb-2">Forma de Pagamento*</h3>
+               <h3 className="text-teal-500 font-bold border-b border-teal-100 pb-2">Forma de Pagamento*</h3>
                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                  {[
                    { id: 'Dinheiro', icon: Banknote, color: 'emerald' },
@@ -737,7 +948,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                {metodoPagamento && metodoPagamento.includes('Cartão') && (
                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 animate-in slide-in-from-top-4 space-y-4">
                    <div className="flex items-center gap-2 text-slate-600 mb-2">
-                     <Smartphone className="w-4 h-4 text-sky-500" />
+                     <Smartphone className="w-4 h-4 text-teal-500" />
                      <h4 className="text-xs font-bold uppercase tracking-wider">Selecione a Maquininha*</h4>
                    </div>
                    <div className="grid grid-cols-2 gap-4">
@@ -747,7 +958,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                         onClick={() => setMaquininha(m)}
                         className={`flex items-center justify-center p-4 rounded-xl border-2 font-bold transition-all ${
                           maquininha === m 
-                          ? 'border-sky-500 bg-white text-sky-600 shadow-lg scale-[1.02]' 
+                          ? 'border-teal-500 bg-white text-teal-600 shadow-lg scale-[1.02]' 
                           : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'
                         }`}
                        >
@@ -763,7 +974,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                             onClick={() => setBandeiraCartao(b)}
                             className={`py-2 px-1 rounded-lg border font-bold text-[9px] transition-all ${
                               bandeiraCartao === b
-                              ? 'border-sky-500 bg-sky-50 text-sky-600 shadow-sm'
+                              ? 'border-teal-500 bg-teal-50 text-teal-600 shadow-sm'
                               : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'
                             }`}
                           >
@@ -781,7 +992,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                <textarea 
                 value={observacoes}
                 onChange={e => setObservacoes(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm h-24 focus:ring-2 focus:ring-sky-500/20 outline-none"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm h-24 focus:ring-2 focus:ring-teal-500/20 outline-none"
                 placeholder="As observações serão impressas no demonstrativo de venda ou orçamento."
                />
             </div>
@@ -827,7 +1038,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                   url.searchParams.delete('tab');
                   window.open(url.toString(), '_blank', 'noopener,noreferrer');
                 }}
-                className="bg-sky-500 hover:bg-sky-600 text-white text-[10px] font-bold py-2 rounded shadow-sm transition-all flex items-center justify-center gap-1"
+                className="bg-teal-500 hover:bg-teal-600 text-white text-[10px] font-bold py-2 rounded shadow-sm transition-all flex items-center justify-center gap-1"
               >
                 <Plus className="w-3 h-3" /> Nova aba PDV
               </button>
@@ -915,7 +1126,7 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
             <button className="text-white hover:rotate-180 transition-transform duration-500"><CheckCircle className="w-3 h-3" /></button>
           </div>
           <div className="p-2 space-y-2">
-            <button className="w-full bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold py-2 rounded shadow-sm mb-2">Localizar venda</button>
+            <button className="w-full bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold py-2 rounded shadow-sm mb-2">Localizar venda</button>
             
             <div className="flex items-center justify-between bg-slate-50 p-2 rounded border border-slate-100 text-[10px] font-bold text-slate-500 mb-4">
                <ChevronDown className="w-3 h-3" />
@@ -928,10 +1139,10 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                 <div 
                   key={mov._id} 
                   onClick={() => setSelectedMov(mov)}
-                  className="flex items-center justify-between p-3 bg-white border-b border-slate-50 hover:bg-sky-50 transition-all cursor-pointer group"
+                  className="flex items-center justify-between p-3 bg-white border-b border-slate-50 hover:bg-teal-50 transition-all cursor-pointer group"
                 >
                   <div className="space-y-0.5">
-                    <p className="text-[10px] font-bold text-slate-800 uppercase leading-none group-hover:text-sky-600 transition-colors">{mov.descricao.split(' - ')[2] || mov.operador.split(' ')[0]}</p>
+                    <p className="text-[10px] font-bold text-slate-800 uppercase leading-none group-hover:text-teal-600 transition-colors">{mov.descricao.split(' - ')[2] || mov.operador.split(' ')[0]}</p>
                     <p className="text-[9px] text-slate-400 truncate w-32">{mov.descricao}</p>
                   </div>
                   <div className="flex items-center gap-2">

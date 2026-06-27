@@ -1,0 +1,16 @@
+{
+  "title": "Citas",
+  "calendar": "Calendario",
+  "new_appointment": "Nueva Cita",
+  "schedule": "Programar",
+  "reschedule": "Reprogramar",
+  "cancel": "Cancelar Cita",
+  "service": "Servicio",
+  "professional": "Profesional",
+  "status_scheduled": "Programada",
+  "status_confirmed": "Confirmada",
+  "status_cancelled": "Cancelada",
+  "status_completed": "Completada",
+  "select_date": "Seleccionar fecha",
+  "select_time": "Seleccionar hora"
+}

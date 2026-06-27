@@ -8,7 +8,13 @@ import {
   type Customer,
   type LogEntry,
   type AppUser,
+  subscribeAppointments,
+  type Appointment,
+  subscribeMedicalRecords,
+  type MedicalRecord
 } from '../services/dataService';
+import ProntuarioModal from '../components/ProntuarioModal';
+import { useTranslation } from 'react-i18next';
 
 interface CRMProps {
   selectedCustomerId: string | null;
@@ -27,12 +33,26 @@ const normalizeId = (nome: string) =>
     .slice(0, 80);
 
 const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProps) => {
+  const { t } = useTranslation(['crm', 'common']);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [newLog, setNewLog] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [crmTab, setCrmTab] = useState<'anotacoes'|'prontuarios'>('anotacoes');
+  const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
+
+  useEffect(() => {
+    return subscribeAppointments(setAppointments);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCustomerId) { setRecords([]); return; }
+    return subscribeMedicalRecords(selectedCustomerId, setRecords);
+  }, [selectedCustomerId]);
 
   useEffect(() => {
     // Busca inicial (vazia ou top 10)
@@ -101,6 +121,12 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
   const filteredCustomers = customers;
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+  
+  const upcomingApts = appointments.filter(a => 
+    a.clientId === selectedCustomerId && 
+    a.date >= new Date().toISOString().substring(0, 10) &&
+    a.status !== 'cancelled'
+  ).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
 
   const handleSendLog = async () => {
     if (!newLog.trim() || !selectedCustomerId) return;
@@ -122,8 +148,8 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
   return (
     <div className="flex flex-col space-y-4 animate-fade-in pb-10" style={{ height: 'calc(100vh - 4rem)' }}>
       <header>
-        <h1 className="text-3xl font-bold text-slate-800">CRM Clientes</h1>
-        <p className="text-slate-500 mt-1">Relacionamento e anotações por cliente.</p>
+        <h1 className="text-3xl font-bold text-slate-800">{t('crm:title', 'CRM Clientes')}</h1>
+        <p className="text-slate-500 mt-1">{t('crm:subtitle', 'Relacionamento e anotações por cliente.')}</p>
       </header>
 
       <div className="flex-1 grid grid-cols-12 gap-5 min-h-0">
@@ -137,7 +163,7 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
                 type="text"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Buscar cliente ou paciente..."
+                placeholder={t('crm:search_placeholder', 'Buscar cliente ou paciente...')}
                 className="bg-transparent flex-1 text-sm focus:outline-none text-slate-700 placeholder-slate-400"
               />
             </div>
@@ -147,8 +173,8 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
             {filteredCustomers.length === 0 && (
               <p className="text-center text-sm text-slate-400 py-8 whitespace-pre-line">
                 {customers.length === 0
-                  ? 'Nenhum cliente ainda.\nImporte o CSV ou salve\numa movimentação.'
-                  : 'Nenhum resultado.'}
+                  ? t('crm:empty_customers', 'Nenhum cliente ainda.\nImporte o CSV ou salve\numa movimentação.')
+                  : t('crm:empty_search', 'Nenhum resultado.')}
               </p>
             )}
             {filteredCustomers.map(c => {
@@ -183,7 +209,7 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
           {!selectedCustomer ? (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 space-y-3">
               <User className="w-12 h-12 text-purple-200" />
-              <p className="text-sm">Selecione um cliente para ver os detalhes.</p>
+              <p className="text-sm">{t('crm:select_prompt', 'Selecione um cliente para ver os detalhes.')}</p>
             </div>
           ) : (
             <>
@@ -219,57 +245,136 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
                     className="flex items-center space-x-2 px-4 py-2 bg-emerald-50 text-emerald-700 font-semibold rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200 text-sm flex-shrink-0"
                   >
                     <MessageCircle className="w-4 h-4" />
-                    <span>WhatsApp</span>
+                    <span>{t('crm:btn_whatsapp', 'WhatsApp')}</span>
                   </a>
                 )}
               </div>
 
-              {/* Logs de interação */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-purple-50/20">
-                {logs.length === 0 && (
-                  <p className="text-center text-sm text-slate-400 pt-8">
-                    Nenhuma anotação ainda. Registre o primeiro contato!
-                  </p>
-                )}
-                {logs.map(log => {
-                  const isRec = log.autor === 'Recepção';
-                  return (
-                    <div key={log.id} className={`flex flex-col ${isRec ? 'items-start' : 'items-end'}`}>
-                      <span className="text-xs text-slate-400 mb-1">
-                        {log.autor} · {fmt(log.timestamp)}
-                      </span>
-                      <div className="px-4 py-3 rounded-2xl max-w-2xl text-sm shadow-sm bg-white border border-slate-100 text-slate-700">
-                        {log.texto}
+              {/* Próximos Agendamentos */}
+              {upcomingApts.length > 0 && (
+                <div className="px-6 py-4 border-b border-purple-50 bg-slate-50/50">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase mb-3">{t('crm:upcoming_appointments', 'Próximos Agendamentos')}</h3>
+                  <div className="space-y-2">
+                    {upcomingApts.map(apt => (
+                      <div key={apt.id} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{apt.serviceName}</p>
+                          <p className="text-xs font-medium text-slate-500">
+                            {apt.date.split('-').reverse().join('/')} às {apt.startTime} - Paciente: {apt.patientName}
+                          </p>
+                        </div>
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${apt.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {apt.status === 'confirmed' ? 'Confirmado' : 'Agendado'}
+                        </span>
                       </div>
-                    </div>
-                  );
-                })}
-                <div ref={bottomRef} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tabs */}
+              <div className="flex border-b border-purple-100 mt-2 px-6">
+                <button onClick={() => setCrmTab('anotacoes')} className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${crmTab === 'anotacoes' ? 'border-primary text-primary' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{t('crm:tab_notes', 'Anotações')}</button>
+                <button onClick={() => setCrmTab('prontuarios')} className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${crmTab === 'prontuarios' ? 'border-primary text-primary' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{t('crm:tab_records', 'Prontuários')}</button>
               </div>
 
-              {/* Input de nova anotação */}
-              <div className="p-4 border-t border-purple-50 flex gap-3">
-                <input
-                  type="text"
-                  value={newLog}
-                  onChange={e => setNewLog(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendLog()}
-                  placeholder="Registrar anotação ou log de WhatsApp..."
-                  className="flex-1 px-4 py-3 bg-purple-50/50 border border-purple-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 text-slate-700 placeholder-slate-400"
-                />
-                <button
-                  onClick={handleSendLog}
-                  disabled={sending || !newLog.trim()}
-                  className="px-5 py-3 bg-primary text-white rounded-2xl hover:bg-pink-600 transition-colors shadow-sm shadow-primary/30 disabled:opacity-50 flex items-center space-x-2"
-                >
-                  <Send className="w-4 h-4" />
-                  <span className="text-sm font-semibold">Salvar</span>
-                </button>
-              </div>
+              {crmTab === 'anotacoes' && (
+                <>
+                  {/* Logs de interação */}
+                  <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-purple-50/20">
+                    {logs.length === 0 && (
+                      <p className="text-center text-sm text-slate-400 pt-8">
+                        {t('crm:empty_notes', 'Nenhuma anotação ainda. Registre o primeiro contato!')}
+                      </p>
+                    )}
+                    {logs.map(log => {
+                      const isRec = log.autor === 'Recepção';
+                      return (
+                        <div key={log.id} className={`flex flex-col ${isRec ? 'items-start' : 'items-end'}`}>
+                          <span className="text-xs text-slate-400 mb-1">
+                            {log.autor} · {fmt(log.timestamp)}
+                          </span>
+                          <div className="px-4 py-3 rounded-2xl max-w-2xl text-sm shadow-sm bg-white border border-slate-100 text-slate-700">
+                            {log.texto}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={bottomRef} />
+                  </div>
+
+                  {/* Input de nova anotação */}
+                  <div className="p-4 border-t border-purple-50 flex gap-3">
+                    <input
+                      type="text"
+                      value={newLog}
+                      onChange={e => setNewLog(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleSendLog()}
+                      placeholder={t('crm:notes_placeholder', 'Registrar anotação ou log de WhatsApp...')}
+                      className="flex-1 px-4 py-3 bg-purple-50/50 border border-purple-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 text-slate-700 placeholder-slate-400"
+                    />
+                    <button
+                      onClick={handleSendLog}
+                      disabled={sending || !newLog.trim()}
+                      className="px-5 py-3 bg-primary text-white rounded-2xl hover:bg-pink-600 transition-colors shadow-sm shadow-primary/30 disabled:opacity-50 flex items-center space-x-2"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span className="text-sm font-semibold">{t('crm:btn_save', 'Salvar')}</span>
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {crmTab === 'prontuarios' && (
+                <div className="flex-1 overflow-y-auto p-6 bg-slate-50 space-y-6">
+                  {/* Histórico Rápido */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-6 text-sm">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">{t('crm:total_appointments', 'Total de Consultas')}</p>
+                      <p className="font-bold text-slate-700">{records.length}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">{t('crm:last_appointment', 'Último Atendimento')}</p>
+                      <p className="font-bold text-slate-700">{records.length > 0 ? records[0].date.split('-').reverse().join('/') : t('crm:none', 'Nenhum')}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">{t('crm:next_return', 'Próximo Retorno')}</p>
+                      <p className="font-bold text-slate-700">{records.find(r => r.returnDate && r.returnDate >= new Date().toISOString().substring(0,10))?.returnDate?.split('-').reverse().join('/') || t('crm:none', 'Nenhum')}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-slate-700">{t('crm:records_history', 'Histórico de Prontuários')}</h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    {records.map(rec => (
+                      <div key={rec.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                        <div>
+                           <p className="text-sm font-bold text-slate-800">{rec.date.split('-').reverse().join('/')} - {rec.diagnosis || t('crm:no_diagnosis', 'Sem diagnóstico')}</p>
+                           <p className="text-xs text-slate-500 line-clamp-1">{rec.chiefComplaint}</p>
+                           <p className="text-[10px] text-slate-400 mt-1">Dr(a) {rec.professionalName}</p>
+                        </div>
+                        <button onClick={() => setSelectedRecord(rec)} className="px-4 py-2 bg-indigo-50 text-indigo-600 font-bold text-sm rounded-xl hover:bg-indigo-100">{t('crm:btn_view_record', 'Ver Prontuário')}</button>
+                      </div>
+                    ))}
+                    {records.length === 0 && (
+                      <p className="text-center text-slate-400 py-8 text-sm">{t('crm:empty_records', 'Nenhum prontuário registrado para este paciente.')}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
+      
+      {selectedRecord && (
+        <ProntuarioModal 
+          initialRecord={selectedRecord} 
+          onClose={() => setSelectedRecord(null)}
+        />
+      )}
     </div>
   );
 };

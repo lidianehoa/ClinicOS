@@ -1,0 +1,10 @@
+{
+  "title": "Consola Admin",
+  "system_alerts": "Alertas del Sistema",
+  "audit_log": "Registro de Auditoría",
+  "tenant_management": "Gestión de Instancias",
+  "active_users": "Usuarios Activos",
+  "system_health": "Salud del Sistema",
+  "database_usage": "Uso de Base de Datos",
+  "storage_usage": "Uso de Almacenamiento"
+}

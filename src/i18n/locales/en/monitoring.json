@@ -1,0 +1,18 @@
+{
+  "title": "Monitoring",
+  "queue": "Patient Queue",
+  "waiting": "Waiting",
+  "in_consultation": "In consultation",
+  "in_observation": "Under observation",
+  "hospitalized": "Hospitalized",
+  "discharged": "Discharged",
+  "add_patient": "Add patient",
+  "open_record": "Open record",
+  "change_status": "Change status",
+  "time_waiting": "Waiting time",
+  "patient": "Patient",
+  "owner": "Owner / Responsible",
+  "species": "Species",
+  "reason": "Reason",
+  "empty_queue": "No patients in queue"
+}

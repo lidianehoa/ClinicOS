@@ -1,0 +1,13 @@
+{
+  "title": "Pricing",
+  "pricing_engine": "Pricing Engine",
+  "markup": "Profit Margin (Markup)",
+  "fixed_costs": "Fixed Costs",
+  "variable_costs": "Variable Costs",
+  "taxes": "Taxes",
+  "commissions": "Commissions",
+  "simulate_price": "Simulate Price",
+  "suggested_price": "Suggested Price",
+  "profit_margin": "Net Profit Margin",
+  "break_even": "Break-even Point"
+}

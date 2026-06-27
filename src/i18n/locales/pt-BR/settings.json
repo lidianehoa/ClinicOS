@@ -1,0 +1,12 @@
+{
+  "title": "Configurações",
+  "clinic_data": "Dados da Clínica",
+  "integrations": "Integrações",
+  "users_roles": "Usuários e Permissões",
+  "billing": "Assinatura e Faturamento",
+  "whatsapp_api": "API do WhatsApp",
+  "payment_gateway": "Gateway de Pagamento",
+  "logo": "Logotipo da Clínica",
+  "business_hours": "Horário de Funcionamento",
+  "save_settings": "Salvar Configurações"
+}

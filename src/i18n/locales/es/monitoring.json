@@ -1,0 +1,18 @@
+{
+  "title": "Monitoreo",
+  "queue": "Cola de Atención",
+  "waiting": "Esperando",
+  "in_consultation": "En consulta",
+  "in_observation": "En observación",
+  "hospitalized": "Internado",
+  "discharged": "Alta médica",
+  "add_patient": "Agregar paciente",
+  "open_record": "Abrir historial",
+  "change_status": "Cambiar estado",
+  "time_waiting": "Tiempo de espera",
+  "patient": "Paciente",
+  "owner": "Tutor / Responsable",
+  "species": "Especie",
+  "reason": "Motivo",
+  "empty_queue": "No hay pacientes en la cola"
+}

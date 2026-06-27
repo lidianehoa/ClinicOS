@@ -1,4 +1,5 @@
 // ─── Configuração ─────────────────────────────────────────────────────────────
+export const AI_ENABLED = false;
 // A chave API Gemini está guardada no Firebase Secret Manager.
 // O cliente chama /api/gemini (mesmo domínio via Hosting rewrite) — sem CORS, sem chave exposta.
 

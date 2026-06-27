@@ -1,0 +1,13 @@
+{
+  "title": "Bank Reconciliation",
+  "import_ofx": "Import OFX",
+  "bank_statement": "Bank Statement",
+  "system_entries": "System Entries",
+  "status_matched": "Reconciled",
+  "status_pending": "Pending",
+  "status_divergent": "Divergent",
+  "match_found": "Match Found",
+  "manual_match": "Manual Match",
+  "ignore_transaction": "Ignore Transaction",
+  "reconcile_all": "Reconcile Selected"
+}

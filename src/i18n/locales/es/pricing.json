@@ -1,0 +1,13 @@
+{
+  "title": "Precios",
+  "pricing_engine": "Motor de Precios",
+  "markup": "Margen de Ganancia (Markup)",
+  "fixed_costs": "Costos Fijos",
+  "variable_costs": "Costos Variables",
+  "taxes": "Impuestos",
+  "commissions": "Comisiones",
+  "simulate_price": "Simular Precio",
+  "suggested_price": "Precio Sugerido",
+  "profit_margin": "Margen de Ganancia Neta",
+  "break_even": "Punto de Equilibrio"
+}

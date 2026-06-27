@@ -1,0 +1,13 @@
+{
+  "title": "Precificação",
+  "pricing_engine": "Motor de Preços",
+  "markup": "Margem de Lucro (Markup)",
+  "fixed_costs": "Custos Fixos",
+  "variable_costs": "Custos Variáveis",
+  "taxes": "Impostos",
+  "commissions": "Comissões",
+  "simulate_price": "Simular Preço",
+  "suggested_price": "Preço Sugerido",
+  "profit_margin": "Margem de Lucro Líquido",
+  "break_even": "Ponto de Equilíbrio"
+}

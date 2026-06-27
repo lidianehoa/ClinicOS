@@ -1,0 +1,16 @@
+{
+  "title": "Agendamentos",
+  "calendar": "Calendário",
+  "new_appointment": "Novo Agendamento",
+  "schedule": "Agendar",
+  "reschedule": "Reagendar",
+  "cancel": "Cancelar Agendamento",
+  "service": "Serviço",
+  "professional": "Profissional",
+  "status_scheduled": "Agendado",
+  "status_confirmed": "Confirmado",
+  "status_cancelled": "Cancelado",
+  "status_completed": "Concluído",
+  "select_date": "Selecione a data",
+  "select_time": "Selecione o horário"
+}
