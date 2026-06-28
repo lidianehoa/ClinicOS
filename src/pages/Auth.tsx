@@ -100,10 +100,10 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-base overflow-hidden relative">
+    <div className="min-h-screen w-full flex items-center justify-center bg-clinic-900 overflow-hidden relative">
       {/* Background Orbs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 rounded-full blur-[120px] animate-pulse" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-secondary/20 rounded-full blur-[120px] animate-pulse" />
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-clinic-500/20 rounded-full blur-[120px] animate-pulse" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-clinic-300/20 rounded-full blur-[120px] animate-pulse" />
 
       <div className="w-full max-w-md px-6 relative z-10">
         <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-[40px] p-8 md:p-10 shadow-2xl shadow-black/20">
@@ -130,7 +130,7 @@ const Auth = () => {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder={t('email_placeholder')}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
                 />
               </div>
             </div>
@@ -145,7 +145,7 @@ const Auth = () => {
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder={t('password_placeholder')}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-primary/50 transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
                 />
               </div>
             </div>
@@ -162,7 +162,7 @@ const Auth = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-primary to-secondary hover:from-pink-600 hover:to-purple-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group"
+              className="w-full bg-gradient-to-r from-clinic-600 to-clinic-500 hover:from-clinic-700 hover:to-clinic-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-clinic-500/20 transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group"
             >
               {loading ? (
                 <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -181,9 +181,9 @@ const Auth = () => {
               className="text-white/60 hover:text-white transition-colors text-sm font-medium"
             >
               {isLogin ? (
-                <>{t('first_access_prompt', 'Primeiro acesso ao sistema?')} <span className="text-primary">{t('register_button', 'Cadastrar Senha')}</span></>
+                <>{t('first_access_prompt', 'Primeiro acesso ao sistema?')} <span className="text-clinic-400">{t('register_button', 'Cadastrar Senha')}</span></>
               ) : (
-                <>{t('already_have_password', 'Já possui uma senha?')} <span className="text-primary">{t('do_login', 'Fazer Login')}</span></>
+                <>{t('already_have_password', 'Já possui uma senha?')} <span className="text-clinic-400">{t('do_login', 'Fazer Login')}</span></>
               )}
             </button>
           </div>
