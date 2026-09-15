@@ -1,4 +1,5 @@
-import { db } from './firebase';
+import { db, functions } from './firebase';
+import { httpsCallable } from 'firebase/functions';
 import {
   collection,
   doc,
@@ -15,39 +16,65 @@ import {
   runTransaction,
   deleteField,
   orderBy,
-  limit
+  limit,
+  addDoc
 } from 'firebase/firestore';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PATHS
-//   bea_data/{appId}/customers/{id}
-//   bea_data/{appId}/daily_flow/{date}       ← entradas do dia
-//   bea_data/{appId}/daily_expenses/{date}   ← despesas do dia (novo)
-//   bea_data/{appId}/interactions/{id}
+// MULTI-TENANT ARCHITECTURE & CONTEXT
+//   clinicas/{tenantId}/...
+//   usuarios/{uid}
+//   tenants/{tenantId}
+//   staff_email_index/{email}
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const APP_ID = import.meta.env.VITE_APP_TENANT_ID || 'clinicos_demo';
+let currentTenantId: string =
+  localStorage.getItem('clinicos_active_tenant') ||
+  import.meta.env.VITE_APP_TENANT_ID ||
+  'clinicos_demo';
 
-// Helpers para caminhos OPERACIONAIS (artifacts > bea_mvp > public > data > ...)
-const OP_COL = (col: string) => collection(db!, 'artifacts', APP_ID, 'public', 'data', col);
-const OP_DOC = (col: string, id: string) => doc(db!, 'artifacts', APP_ID, 'public', 'data', col, id);
+export const getActiveTenantId = (): string => {
+  return currentTenantId;
+};
 
-// Helpers para caminhos de CONFIG/PERFIL (bea_data > bea_mvp > ...)
-const CFG_COL = (col: string) => collection(db!, 'bea_data', APP_ID, col);
-const CFG_DOC = (col: string, id: string) => doc(db!, 'bea_data', APP_ID, col, id);
+export const setActiveTenantId = (tenantId: string): void => {
+  if (!tenantId) return;
+  currentTenantId = tenantId;
+  localStorage.setItem('clinicos_active_tenant', tenantId);
+  window.dispatchEvent(new CustomEvent('tenantChanged', { detail: { tenantId } }));
+};
 
-const customersCol = () => OP_COL('customers');
-const dailyFlowCol = () => OP_COL('daily_flow');
-const dailyExpensesCol = () => OP_COL('daily_expenses');
+export const APP_ID = getActiveTenantId();
 
-const dailyFlowDoc = (date: string) => OP_DOC('daily_flow', date);
-const customerDoc = (id: string) => OP_DOC('customers', id);
-const dailyExpensesDoc = (date: string) => OP_DOC('daily_expenses', date);
+// Helper central para TODAS as coleções operacionais da clínica:
+export const TENANT_COL = (col: string, tenantId: string = getActiveTenantId()) =>
+  collection(db!, 'clinicas', tenantId, col);
 
-// Users e Produtos estão no caminho original
-const userDoc = (uid: string) => CFG_DOC('users', uid);
-const vendaDoc = (id: string) => OP_DOC('vendas', id);
-const caixaDoc = (date: string) => CFG_DOC('caixa', date);
+export const TENANT_DOC = (col: string, id: string, tenantId: string = getActiveTenantId()) =>
+  doc(db!, 'clinicas', tenantId, col, id);
+
+// Aliases operacionais e de configuração
+export const OP_COL = (col: string, tenantId: string = getActiveTenantId()) => TENANT_COL(col, tenantId);
+export const OP_DOC = (col: string, id: string, tenantId: string = getActiveTenantId()) => TENANT_DOC(col, id, tenantId);
+
+export const CFG_COL = (col: string, tenantId: string = getActiveTenantId()) => TENANT_COL(col, tenantId);
+export const CFG_DOC = (col: string, id: string, tenantId: string = getActiveTenantId()) => TENANT_DOC(col, id, tenantId);
+
+const customersCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('customers', tenantId);
+const dailyFlowCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('daily_flow', tenantId);
+const dailyExpensesCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('daily_expenses', tenantId);
+
+const dailyFlowDoc = (date: string, tenantId: string = getActiveTenantId()) => TENANT_DOC('daily_flow', date, tenantId);
+const customerDoc = (id: string, tenantId: string = getActiveTenantId()) => TENANT_DOC('customers', id, tenantId);
+const dailyExpensesDoc = (date: string, tenantId: string = getActiveTenantId()) => TENANT_DOC('daily_expenses', date, tenantId);
+
+// User profile vive na raiz em /usuarios/{uid}
+const userDoc = (uid: string) => doc(db!, 'usuarios', uid);
+const vendaDoc = (id: string, tenantId: string = getActiveTenantId()) => TENANT_DOC('vendas', id, tenantId);
+const caixaDoc = (date: string, tenantId: string = getActiveTenantId()) => TENANT_DOC('caixa', date, tenantId);
+
+export const termosAtendimentoCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('termos_atendimento', tenantId);
+export const auditoriasComplianceCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('auditorias_compliance', tenantId);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIPOS
@@ -94,15 +121,21 @@ export interface Customer {
   cpf?: string;
   rg?: string;
   sexo?: string;
-  email?: string;
+  nascimento?: string;
   telefone?: string;
+  email?: string;
   endereco?: string;
   bairro?: string;
   cidade?: string;
+  estado?: string;
   uf?: string;
   cep?: string;
   rankingABC?: string;
   ticketMedio?: string;
+  observacoes?: string;
+  cadastradoEm?: string;
+  totalGasto?: number;
+  totalAtendimentos?: number;
   ultimaVenda?: string;
   primeiraCompra?: string;
   tags?: string;
@@ -126,6 +159,9 @@ export interface AppUser {
   status: 'ativo' | 'inativo';
   photoURL?: string | null;
   staffId?: string;
+  activeTenantId?: string;
+  tenants?: string[];
+  clinicName?: string;
 }
 
 export interface Interaction {
@@ -141,6 +177,34 @@ export interface Interaction {
 }
 
 export type LogEntry = Interaction; // Alias para compatibilidade
+
+export type TipoTermo = 'tcle_geral' | 'tcle_sedacao' | 'tcle_procedimento' | 'lgpd_domiciliar' | 'autorizacao_imagem' | 'off_label' | 'recusa_conduta' | 'destinacao_cadaver' | 'receita_simples' | 'receita_manipulada';
+
+export interface TermoAtendimento {
+  id: string;
+  pacienteId: string;
+  atendimentoId?: string;
+  tipo: TipoTermo;
+  status: 'pendente' | 'assinado' | 'recusado_com_testemunhas';
+  pdfUrl?: string;
+  baseLegal: string;
+  conteudoClinico: string; // O que foi preenchido de variável
+  geradoEm: string;
+  geradoPor: string;
+  numeroNotificacaoSipeagro?: string;
+  isControlado?: boolean;
+}
+
+export interface AuditoriaCompliance {
+  id: string;
+  veterinarioId: string;
+  tipo: 'checklist_compliance' | 'conferencia_maleta';
+  data: string;
+  itensConformes: number;
+  itensTotal: number;
+  parecer?: 'apto' | 'adequacao' | 'critico';
+  pdfUrl?: string;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -452,10 +516,10 @@ export interface Product {
   updatedAt?: string | any;
 }
 
-export const configDoc = (tenantId: string = APP_ID) => doc(db!, 'artifacts', tenantId, 'public', 'data', 'config', 'integrations');
-export const servicesCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'services');
-export const productsCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'products');
-export const productDoc = (id: string, tenantId: string = APP_ID) => doc(productsCol(tenantId), id);
+export const configDoc = (section: string = 'integrations', tenantId: string = getActiveTenantId()) => doc(db!, 'clinicas', tenantId, 'config', section);
+export const servicesCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('services', tenantId);
+export const productsCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('products', tenantId);
+export const productDoc = (id: string, tenantId: string = getActiveTenantId()) => TENANT_DOC('products', id, tenantId);
 
 export const subscribeProducts = (
   callback: (products: Product[]) => void
@@ -940,6 +1004,79 @@ export const addPatientToDailyFlow = async (date: string, registro: Registro): P
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─── Assistente IA (Exames Gerais) ──────────────────────────────────────────
+
+export const subscribeAllExames = (callback: (exames: Exame[]) => void) => {
+  if (!db) return () => {};
+  
+  // Ordenado por data de upload decrescente
+  const q = query(examesCol(), orderBy('dataUpload', 'desc'), limit(100));
+
+  return onSnapshot(q, (snapshot) => {
+    const exames = snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id
+    })) as Exame[];
+    callback(exames);
+  });
+};
+
+export const subscribeCasoClinico = (id: string, callback: (caso: CasoClinico | null) => void) => {
+  if (!db) return () => {};
+  const docRef = doc(casosClinicosCol(), id);
+  return onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      callback({ id: docSnap.id, ...docSnap.data() } as CasoClinico);
+    } else {
+      callback(null);
+    }
+  });
+};
+
+export const subscribeAllCasos = (callback: (casos: CasoClinico[]) => void) => {
+  if (!db) return () => {};
+  
+  const q = query(casosClinicosCol(), orderBy('criadoEm', 'desc'), limit(100));
+
+  return onSnapshot(q, (snapshot) => {
+    const casos = snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id
+    })) as CasoClinico[];
+    callback(casos);
+  });
+};
+
+export const addCasoClinico = async (caso: Omit<CasoClinico, 'id' | 'criadoEm'>): Promise<string> => {
+  if (!db) throw new Error('Firestore não inicializado');
+  const docRef = await addDoc(casosClinicosCol(), {
+    ...caso,
+    criadoEm: new Date().toISOString()
+  });
+  // Update doc with its own ID
+  await updateDoc(docRef, { id: docRef.id });
+  return docRef.id;
+};
+
+export const updateCasoClinico = async (id: string, caso: Partial<CasoClinico>): Promise<void> => {
+  if (!db) throw new Error('Firestore não inicializado');
+  const docRef = doc(casosClinicosCol(), id);
+  await updateDoc(docRef, caso);
+};
+
+export const subscribeAnalisesPorCaso = (casoId: string, callback: (analises: AnaliseClinica[]) => void) => {
+  if (!db) return () => {};
+  const q = query(analisesCol(), where('casoId', '==', casoId), orderBy('numero', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const analises = snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id
+    })) as AnaliseClinica[];
+    callback(analises);
+  });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PERFIL DE USUÁRIO
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -959,6 +1096,76 @@ export const subscribeUserProfile = (uid: string, callback: (user: AppUser | nul
 
 export const canDelete = (role: UserRole | undefined): boolean => {
   return role === 'gerente' || role === 'administrador';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLINICOS IA (EXAMES, ANÁLISES E NOTAS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CasoClinico {
+  id: string;
+  pacienteId: string;
+  sintomasPrincipais: string;
+  historicoClinico: string;
+  examesIds: string[];
+  status: 'pendente' | 'analisando' | 'analisado' | 'erro';
+  resumoCaso?: string;
+  criadoEm: string;
+  tenantId: string;
+}
+
+export interface Exame {
+  id: string;
+  pacienteId: string;
+  tipo: string;
+  fileUrl: string;
+  dataUpload: string;
+  tenantId: string;
+}
+
+export interface AnaliseClinica {
+  id: string;
+  casoId: string;
+  numero: number;
+  dataAnalise: string;
+  examesConsiderados: string[];
+  interpretacaoClinica?: string;
+  diferenciais: any[];
+  achados?: string[];
+  interpretacaoExames?: {
+    parametro: string;
+    resultado: string;
+    referencia: string;
+    interpretacao: string;
+  }[];
+  textoExplicativoExames?: string;
+  condutaSugerida: string;
+  pdfUrl?: string;
+  tenantId: string;
+}
+
+export interface NotaExplicativa {
+  id: string;
+  pacienteId: string;
+  casoId: string;
+  analiseId: string;
+  conteudo: string;
+  geradaEm: string;
+  status: 'rascunho' | 'confirmada';
+  confirmadaEm?: string;
+  tenantId: string;
+}
+
+export interface ProtocoloClinico {
+  id: string;
+  titulo: string;
+  tags: string[];
+  conteudo: string;
+  fonteReferencia?: string;
+  ativo: boolean;
+  criadoPor: string;
+  criadoEm: string;
+  versao: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1008,19 +1215,18 @@ export interface MedicalRecord {
   updatedAt: string;
 }
 
-export const saveMedicalRecord = async (record: MedicalRecord): Promise<void> => {
+export const saveMedicalRecord = async (record: MedicalRecord, tenantId: string = getActiveTenantId()): Promise<void> => {
   if (!db) return;
-  const colRef = collection(db, 'records');
-  await setDoc(doc(colRef, record.id), record, { merge: true });
+  await setDoc(doc(recordsCol(tenantId), record.id), record, { merge: true });
 };
 
 export const subscribeMedicalRecords = (
   clientId: string,
-  callback: (records: MedicalRecord[]) => void
+  callback: (records: MedicalRecord[]) => void,
+  tenantId: string = getActiveTenantId()
 ) => {
   if (!db) return () => {};
-  const colRef = collection(db, 'records');
-  const q = query(colRef, where('clientId', '==', clientId));
+  const q = query(recordsCol(tenantId), where('clientId', '==', clientId));
   return onSnapshot(q, (snapshot) => {
     const data = snapshot.docs.map((doc) => doc.data() as MedicalRecord);
     data.sort((a, b) => {
@@ -1046,18 +1252,44 @@ export interface NotificationLog {
   sentAt: string;
 }
 
-export const saveNotificationLog = async (log: NotificationLog): Promise<void> => {
+export const deleteNotaExplicativa = async (notaId: string): Promise<void> => {
   if (!db) return;
-  const colRef = collection(db, 'notifications_log');
-  await setDoc(doc(colRef, log.id), log, { merge: true });
+  const colRef = notasExplicativasCol();
+  await deleteDoc(doc(colRef, notaId));
+};
+
+export const saveProtocolo = async (protocolo: ProtocoloClinico): Promise<void> => {
+  if (!db) return;
+  const colRef = protocolosCol();
+  await setDoc(doc(colRef, protocolo.id), protocolo, { merge: true });
+};
+
+export const subscribeProtocolos = (callback: (protocolos: ProtocoloClinico[]) => void) => {
+  if (!db) return () => {};
+  const colRef = protocolosCol();
+  const q = query(colRef, orderBy('titulo', 'asc'));
+  return onSnapshot(q, (snap) => {
+    const list = snap.docs.map(doc => doc.data() as ProtocoloClinico);
+    callback(list);
+  }, err => {
+    console.error('subscribeProtocolos:', err);
+    callback([]);
+  });
+};
+
+export const notificationsLogCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('notifications_log', tenantId);
+
+export const saveNotificationLog = async (log: NotificationLog, tenantId: string = getActiveTenantId()): Promise<void> => {
+  if (!db) return;
+  await setDoc(doc(notificationsLogCol(tenantId), log.id), log, { merge: true });
 };
 
 export const subscribeNotificationLogs = (
-  callback: (logs: NotificationLog[]) => void
+  callback: (logs: NotificationLog[]) => void,
+  tenantId: string = getActiveTenantId()
 ) => {
   if (!db) return () => {};
-  const colRef = collection(db, 'notifications_log');
-  const q = query(colRef, orderBy('sentAt', 'desc'), limit(50));
+  const q = query(notificationsLogCol(tenantId), orderBy('sentAt', 'desc'), limit(50));
   return onSnapshot(q, (snapshot) => {
     callback(snapshot.docs.map((doc) => doc.data() as NotificationLog));
   });
@@ -1083,6 +1315,27 @@ export interface SupplyUsed {
   unit: string;
   unitCost: number;
   totalCost: number;
+}
+
+export interface SystemCheck {
+  status: 'Normal' | 'Alterado' | '';
+  notes?: string;
+}
+
+export interface PhysicalExamChecklist {
+  nutricional?: string; // Escore de 1 a 9
+  hidratacao?: SystemCheck;
+  mucosas?: SystemCheck;
+  olhos?: SystemCheck;
+  ouvidos?: SystemCheck;
+  pele?: SystemCheck;
+  linfonodos?: SystemCheck;
+  cardiorrespiratorio?: SystemCheck;
+  digestorio?: SystemCheck;
+  geniturinario?: SystemCheck;
+  locomotor?: SystemCheck;
+  neurologico?: SystemCheck;
+  reprodutor?: SystemCheck;
 }
 
 export interface Consultation {
@@ -1111,6 +1364,7 @@ export interface Consultation {
   chiefComplaint?: string;
   anamnesis?: string;
   physicalExam?: string;
+  physicalExamChecklist?: PhysicalExamChecklist;
   diagnosis?: string;
   treatment?: string;
   observations?: string;
@@ -1149,14 +1403,19 @@ export interface TimelineEvent {
   referenceCollection: string;
 }
 
-export const consultationsCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'consultations');
-export const stockAlertsCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'stock_alerts');
-export const hospitalizationsCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'hospitalizations');
-export const surgeriesCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'surgeries');
-export const recordsCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'records');
-export const prescriptionsCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'prescriptions');
-export const scheduledDosesCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'scheduled_doses');
-export const hospitalizationEvolutionsCol = (tenantId: string = APP_ID) => collection(db!, 'artifacts', tenantId, 'public', 'data', 'hospitalization_evolutions');
+export const consultationsCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('consultas_clinicas', tenantId);
+export const stockAlertsCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('stock_alerts', tenantId);
+export const hospitalizationsCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('hospitalizations', tenantId);
+export const surgeriesCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('surgeries', tenantId);
+export const recordsCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('records', tenantId);
+export const prescriptionsCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('prescriptions', tenantId);
+export const scheduledDosesCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('scheduled_doses', tenantId);
+export const hospitalizationEvolutionsCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('hospitalization_evolutions', tenantId);
+export const casosClinicosCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('casos_clinicos', tenantId);
+export const examesCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('exames', tenantId);
+export const analisesCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('analises', tenantId);
+export const notasExplicativasCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('notas_explicativas', tenantId);
+export const protocolosCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('protocolos_clinicos', tenantId);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNAÇÃO (HOSPITALIZATION)
@@ -1541,3 +1800,491 @@ export const completeSurgery = async (
     }
   }
 };
+export const subscribeExames = (
+  pacienteId: string,
+  callback: (exames: Exame[]) => void
+) => {
+  if (!db) return () => {};
+  const q = query(examesCol(), where('pacienteId', '==', pacienteId));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map((doc) => doc.data() as Exame);
+    data.sort((a, b) => b.dataUpload.localeCompare(a.dataUpload));
+    callback(data);
+  });
+};
+
+export const subscribeConsultasPaciente = (
+  pacienteId: string,
+  callback: (list: ConsultaAtendimento[]) => void
+): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  const q = query(consultasClinicasCol(), where('pacienteId', '==', pacienteId));
+  return onSnapshot(q, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as ConsultaAtendimento));
+    list.sort((a, b) => (b.data || b.criadoEm || '').localeCompare(a.data || a.criadoEm || ''));
+    callback(list);
+  }, err => {
+    console.error('subscribeConsultasPaciente:', err);
+    callback([]);
+  });
+};
+
+export const subscribeAllConsultasAtendimento = (
+  callback: (list: ConsultaAtendimento[]) => void
+): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  return onSnapshot(consultasClinicasCol(), snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as ConsultaAtendimento));
+    list.sort((a, b) => (b.data || b.criadoEm || '').localeCompare(a.data || a.criadoEm || ''));
+    callback(list);
+  }, err => {
+    console.error('subscribeAllConsultasAtendimento:', err);
+    callback([]);
+  });
+};
+
+export const subscribeAnalises = (
+  pacienteId: string,
+  callback: (analises: AnaliseClinica[]) => void
+) => {
+  if (!db) return () => {};
+  const q = query(analisesCol(), where('pacienteId', '==', pacienteId));
+  return  onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AnaliseClinica));
+    data.sort((a, b) => b.dataAnalise.localeCompare(a.dataAnalise));
+    callback(data);
+  });
+};
+
+export const subscribeAllAnalises = (
+  callback: (analises: AnaliseClinica[]) => void
+) => {
+  if (!db) return () => {};
+  const q = query(analisesCol(), orderBy('createdAt', 'desc'), limit(100));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map((doc) => doc.data() as AnaliseClinica);
+    callback(data);
+  });
+};
+
+export const subscribeNotas = (
+  pacienteId: string,
+  callback: (notas: NotaExplicativa[]) => void
+) => {
+  if (!db) return () => {};
+  const q = query(notasExplicativasCol(), where('pacienteId', '==', pacienteId));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map((doc) => doc.data() as NotaExplicativa);
+    data.sort((a, b) => b.geradaEm.localeCompare(a.geradaEm));
+    callback(data);
+  });
+};
+
+export const saveTermoAtendimento = async (termo: TermoAtendimento): Promise<void> => {
+  if (!db) return;
+  const safeId = termo.id || `termo_${Date.now()}`;
+  await setDoc(doc(termosAtendimentoCol(), safeId), {
+    ...termo,
+    id: safeId
+  }, { merge: true });
+};
+
+export const subscribeTermosAtendimento = (
+  pacienteId: string,
+  callback: (termos: TermoAtendimento[]) => void
+) => {
+  if (!db) return () => {};
+  const q = query(termosAtendimentoCol(), where('pacienteId', '==', pacienteId));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map((doc) => doc.data() as TermoAtendimento);
+    data.sort((a, b) => b.geradoEm.localeCompare(a.geradoEm));
+    callback(data);
+  });
+};
+
+export const subscribeAllTermosAtendimento = (
+  callback: (termos: TermoAtendimento[]) => void
+) => {
+  if (!db) return () => {};
+  return onSnapshot(termosAtendimentoCol(), (snapshot) => {
+    const data = snapshot.docs.map((doc) => doc.data() as TermoAtendimento);
+    data.sort((a, b) => (b.geradoEm || '').localeCompare(a.geradoEm || ''));
+    callback(data);
+  }, (err) => {
+    console.error('subscribeAllTermosAtendimento:', err);
+    callback([]);
+  });
+};
+
+export const saveAuditoriaCompliance = async (auditoria: AuditoriaCompliance): Promise<void> => {
+  if (!db) return;
+  const safeId = auditoria.id || `audit_${Date.now()}`;
+  await setDoc(doc(auditoriasComplianceCol(), safeId), {
+    ...auditoria,
+    id: safeId
+  }, { merge: true });
+};
+
+export const subscribeAuditoriasCompliance = (
+  veterinarioId: string,
+  callback: (auditorias: AuditoriaCompliance[]) => void
+) => {
+  if (!db) return () => {};
+  const q = query(auditoriasComplianceCol(), where('veterinarioId', '==', veterinarioId));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map((doc) => doc.data() as AuditoriaCompliance);
+    data.sort((a, b) => b.data.localeCompare(a.data));
+    callback(data);
+  });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESPONSÁVEIS (TUTORES) E PACIENTES (ANIMAIS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const responsaveisCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('responsaveis', tenantId);
+export const pacientesCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('pacientes', tenantId);
+export const consultasClinicasCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('consultas_clinicas', tenantId);
+
+export interface Responsavel {
+  id: string;
+  nomeCompleto: string;
+  cpf: string;
+  telefone: string;
+  email: string;
+  endereco?: string;
+  criadoEm: string;
+  tenantId?: string;
+}
+
+export interface Paciente {
+  id: string;
+  nome: string;
+  especie: string;
+  raca: string;
+  sexo: string;
+  idade: number | string;
+  peso: number;
+  tutorId: string;
+  fotoUrl?: string;
+  criadoEm: string;
+  tenantId?: string;
+}
+
+export interface ExameFisicoItem {
+  status: 'Normal' | 'Alterado';
+  observacao?: string;
+}
+
+export interface ParametrosVitais {
+  temperatura?: number | string;
+  freqCardiaca?: number | string;
+  freqRespiratoria?: number | string;
+  tpc?: number | string;
+  mucosas?: 'Rosadas' | 'Pálidas' | 'Ictéricas' | 'Cianóticas' | 'Congestas' | string;
+  desidratacao?: string;
+  ecc?: number | string;
+  escoreDor?: number | string;
+  pressaoSistolica?: number | string;
+}
+
+export interface ConsultaAtendimento {
+  id: string;
+  pacienteId: string;
+  tutorId: string;
+  data: string;
+  sintomasPrincipais: string;
+  historicoClinico: string;
+  exameFisico: Record<string, ExameFisicoItem>;
+  parametrosVitais?: ParametrosVitais;
+  peso: number;
+  dieta: string;
+  diagnostico?: string;
+  conduta?: string;
+  veterinarioNome?: string;
+  isDomiciliar?: boolean;
+  distanciaKm?: number;
+  valorConsulta?: number;
+  valorDeslocamento?: number;
+  valorTotal?: number;
+  criadoEm: string;
+}
+
+export const subscribeResponsaveis = (callback: (list: Responsavel[]) => void): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  return onSnapshot(
+    responsaveisCol(),
+    snap => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Responsavel));
+      list.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+      callback(list);
+    },
+    err => {
+      console.error('subscribeResponsaveis:', err.code, err.message);
+      callback([]);
+    }
+  );
+};
+
+export const saveResponsavel = async (resp: Partial<Responsavel> & { id?: string }): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = resp.id || `resp_${Date.now()}`;
+  const data: Responsavel = {
+    id: safeId,
+    nomeCompleto: resp.nomeCompleto || '',
+    cpf: resp.cpf || '',
+    telefone: resp.telefone || '',
+    email: resp.email || '',
+    endereco: resp.endereco || '',
+    criadoEm: resp.criadoEm || new Date().toISOString(),
+    tenantId: APP_ID
+  };
+  await setDoc(doc(responsaveisCol(), safeId), data, { merge: true });
+  return safeId;
+};
+
+export const deleteResponsavel = async (id: string): Promise<void> => {
+  if (!db) return;
+  await deleteDoc(doc(responsaveisCol(), id));
+};
+
+export const subscribePacientes = (callback: (list: Paciente[]) => void): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  return onSnapshot(
+    pacientesCol(),
+    snap => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Paciente));
+      list.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+      callback(list);
+    },
+    err => {
+      console.error('subscribePacientes:', err.code, err.message);
+      callback([]);
+    }
+  );
+};
+
+export const savePaciente = async (paciente: Partial<Paciente> & { id?: string }): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = paciente.id || `paciente_${Date.now()}`;
+  const data: Paciente = {
+    id: safeId,
+    nome: paciente.nome || '',
+    especie: paciente.especie || 'Canina',
+    raca: paciente.raca || 'SRD',
+    sexo: paciente.sexo || 'Macho',
+    idade: paciente.idade || 0,
+    peso: Number(paciente.peso) || 0,
+    tutorId: paciente.tutorId || '',
+    fotoUrl: paciente.fotoUrl || '',
+    criadoEm: paciente.criadoEm || new Date().toISOString(),
+    tenantId: APP_ID
+  };
+  await setDoc(doc(pacientesCol(), safeId), data, { merge: true });
+  return safeId;
+};
+
+export const deletePaciente = async (id: string): Promise<void> => {
+  if (!db) return;
+  await deleteDoc(doc(pacientesCol(), id));
+};
+
+export const saveConsultaAtendimento = async (consulta: ConsultaAtendimento): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = consulta.id || `cons_${Date.now()}`;
+  await setDoc(doc(consultasClinicasCol(), safeId), {
+    ...consulta,
+    id: safeId
+  }, { merge: true });
+  return safeId;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATENDIMENTO DOMICILIAR — CONFIG, MEDICAMENTOS APLICADOS, CHECKLIST RESÍDUOS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface HomeCareConfig {
+  ativo: boolean;
+  enderecoBase: string;
+  modeloPrecificacao: 'por_km' | 'faixas';
+  valorPorKm?: number;
+  taxaMinima?: number;
+  faixas?: Array<{ ateKm: number; valor: number }>;
+}
+
+export const getHomeCareConfig = async (): Promise<HomeCareConfig | null> => {
+  if (!db) return null;
+  const snap = await getDoc(CFG_DOC('config', 'homecare'));
+  return snap.exists() ? (snap.data() as HomeCareConfig) : null;
+};
+
+export const saveHomeCareConfig = async (data: HomeCareConfig): Promise<void> => {
+  if (!db) return;
+  await setDoc(CFG_DOC('config', 'homecare'), data, { merge: true });
+};
+
+// ── Medicamentos Aplicados ────────────────────────────────────────────────────
+
+export interface MedicamentoAplicado {
+  id: string;
+  atendimentoId: string;
+  farmaco: string;
+  dose: string;
+  viaAdministracao: string;
+  horario: string;
+  envolveSedacao: boolean;
+  veterinarioNome?: string;
+  criadoEm: string;
+  tenantId?: string;
+}
+
+const medicamentosAplicadosCol = () => OP_COL('medicamentos_aplicados');
+
+export const saveMedicamentoAplicado = async (
+  med: Omit<MedicamentoAplicado, 'id' | 'criadoEm' | 'tenantId'>
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const id = `med_${Date.now()}`;
+  const data: MedicamentoAplicado = {
+    ...med,
+    id,
+    criadoEm: new Date().toISOString(),
+    tenantId: APP_ID,
+  };
+  await setDoc(doc(medicamentosAplicadosCol(), id), data);
+  return id;
+};
+
+export const subscribeMedicamentosAplicados = (
+  atendimentoId: string,
+  callback: (list: MedicamentoAplicado[]) => void
+): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  const q = query(medicamentosAplicadosCol(), where('atendimentoId', '==', atendimentoId));
+  return onSnapshot(q, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as MedicamentoAplicado));
+    list.sort((a, b) => b.horario.localeCompare(a.horario));
+    callback(list);
+  }, err => {
+    console.error('subscribeMedicamentosAplicados:', err);
+    callback([]);
+  });
+};
+
+export const subscribeAllMedicamentosAplicados = (
+  callback: (list: MedicamentoAplicado[]) => void
+): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  return onSnapshot(medicamentosAplicadosCol(), snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as MedicamentoAplicado));
+    list.sort((a, b) => (b.horario || '').localeCompare(a.horario || ''));
+    callback(list);
+  }, err => {
+    console.error('subscribeAllMedicamentosAplicados:', err);
+    callback([]);
+  });
+};
+
+// ── Checklist de Resíduos PGRSS ───────────────────────────────────────────────
+
+export interface GrupoResiduos {
+  gerado: boolean;
+  itens: string;
+  segregacaoConfirmada: boolean;
+}
+
+export interface ChecklistResiduos {
+  id: string;
+  atendimentoId: string;
+  grupoA: GrupoResiduos;
+  grupoB: GrupoResiduos;
+  grupoE: GrupoResiduos;
+  residuosNoVeiculoConfirmado: boolean;
+  destinoFinal: string;
+  preenchidoPor: string;
+  dataHora: string;
+  tenantId?: string;
+}
+
+const checklistResiduosCol = () => OP_COL('checklist_residuos');
+
+export const saveChecklistResiduos = async (
+  data: Omit<ChecklistResiduos, 'id' | 'tenantId'>
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const id = `res_${Date.now()}`;
+  const record: ChecklistResiduos = { ...data, id, tenantId: APP_ID };
+  await setDoc(doc(checklistResiduosCol(), id), record);
+  return id;
+};
+
+export const subscribeChecklistResiduos = (
+  atendimentoId: string,
+  callback: (list: ChecklistResiduos[]) => void
+): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  const q = query(checklistResiduosCol(), where('atendimentoId', '==', atendimentoId));
+  return onSnapshot(q, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChecklistResiduos));
+    list.sort((a, b) => b.dataHora.localeCompare(a.dataHora));
+    callback(list);
+  }, err => {
+    console.error('subscribeChecklistResiduos:', err);
+    callback([]);
+  });
+};
+
+export const subscribeAllChecklistResiduos = (
+  callback: (list: ChecklistResiduos[]) => void
+): (() => void) => {
+  if (!db) { callback([]); return () => {}; }
+  return onSnapshot(checklistResiduosCol(), snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChecklistResiduos));
+    list.sort((a, b) => (b.dataHora || '').localeCompare(a.dataHora || ''));
+    callback(list);
+  }, err => {
+    console.error('subscribeAllChecklistResiduos:', err);
+    callback([]);
+  });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLOUD FUNCTIONS & ONBOARDING / RESOLUÇÃO DE TENANT
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TenantLookupResult {
+  found: boolean;
+  count: number;
+  defaultTenantId?: string | null;
+  tenants?: Array<{ tenantId: string; role: string }>;
+}
+
+export const resolveTenantByEmail = async (email: string): Promise<TenantLookupResult> => {
+  try {
+    const callable = httpsCallable(functions, 'resolveTenantByEmail');
+    const res = await callable({ email });
+    return res.data as TenantLookupResult;
+  } catch (error: any) {
+    console.warn('Erro ou fallback ao resolver tenant via Cloud Function:', error);
+    // Em caso de ambiente local/offline sem emulator functions, retorno fallback
+    return { found: false, count: 0 };
+  }
+};
+
+export interface RegisterClinicPayload {
+  clinicName: string;
+  ownerName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  crmv?: string;
+}
+
+export const registerClinic = async (
+  data: RegisterClinicPayload
+): Promise<{ success: boolean; tenantId: string; uid: string }> => {
+  const callable = httpsCallable(functions, 'registerNewClinic');
+  const res = await callable(data);
+  return res.data as { success: boolean; tenantId: string; uid: string };
+};
+
