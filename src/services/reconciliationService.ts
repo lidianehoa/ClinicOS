@@ -12,7 +12,11 @@ import {
   orderBy
 } from 'firebase/firestore';
 
-const APP_ID = import.meta.env.VITE_APP_TENANT_ID || 'clinicos_demo';
+import { getActiveTenantId } from './dataService';
+
+// Helpers para caminhos isolados por clínica
+const REC_DOC = (col: string, id: string, tenantId: string = getActiveTenantId()) => doc(db!, 'clinicas', tenantId, col, id);
+const REC_COL = (col: string, tenantId: string = getActiveTenantId()) => collection(db!, 'clinicas', tenantId, col);
 
 // Types
 export interface ValidationResult {
@@ -104,18 +108,18 @@ export const DEFAULT_RATES: ReconciliationConfig = {
 };
 
 // API Functions
-export const getReconciliationConfig = async (): Promise<ReconciliationConfig> => {
+export const getReconciliationConfig = async (tenantId: string = getActiveTenantId()): Promise<ReconciliationConfig> => {
   if (!db) return DEFAULT_RATES;
   
   try {
     // Check local config first
-    const localSnap = await getDoc(doc(db, 'bea_data', APP_ID, 'reconciliation', 'config'));
+    const localSnap = await getDoc(REC_DOC('reconciliation', 'config', tenantId));
     if (localSnap.exists()) {
       return localSnap.data() as ReconciliationConfig;
     }
 
     // Fallback to pricing config
-    const pricingSnap = await getDoc(doc(db, 'bea_data', APP_ID, 'pricing', 'config'));
+    const pricingSnap = await getDoc(REC_DOC('pricing', 'config', tenantId));
     if (pricingSnap.exists()) {
       const data = pricingSnap.data();
       return {
@@ -130,31 +134,31 @@ export const getReconciliationConfig = async (): Promise<ReconciliationConfig> =
   return DEFAULT_RATES;
 };
 
-export const saveReconciliationConfig = async (config: ReconciliationConfig) => {
+export const saveReconciliationConfig = async (config: ReconciliationConfig, tenantId: string = getActiveTenantId()) => {
   if (!db) return;
-  await setDoc(doc(db, 'bea_data', APP_ID, 'reconciliation', 'config'), config);
+  await setDoc(REC_DOC('reconciliation', 'config', tenantId), config);
 };
 
-export const fetchReconciliations = async (): Promise<Reconciliation[]> => {
+export const fetchReconciliations = async (tenantId: string = getActiveTenantId()): Promise<Reconciliation[]> => {
   if (!db) return [];
   const q = query(
-    collection(db, 'artifacts', APP_ID, 'public', 'data', 'reconciliations'),
+    REC_COL('reconciliations', tenantId),
     orderBy('importedAt', 'desc')
   );
   const snap = await getDocs(q);
   return snap.docs.map(d => d.data() as Reconciliation);
 };
 
-export const fetchReconciliationDetails = async (id: string): Promise<{
+export const fetchReconciliationDetails = async (id: string, tenantId: string = getActiveTenantId()): Promise<{
   reconciliation: Reconciliation;
   items: ReconciliationItem[];
 } | null> => {
   if (!db) return null;
-  const recSnap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'reconciliations', id));
+  const recSnap = await getDoc(REC_DOC('reconciliations', id, tenantId));
   if (!recSnap.exists()) return null;
 
   const itemsQ = query(
-    collection(db, 'artifacts', APP_ID, 'public', 'data', 'reconciliation_items'),
+    REC_COL('reconciliation_items', tenantId),
     where('reconciliationId', '==', id)
   );
   const itemsSnap = await getDocs(itemsQ);
@@ -167,21 +171,22 @@ export const fetchReconciliationDetails = async (id: string): Promise<{
 
 export const saveReconciliationData = async (
   reconciliation: Reconciliation,
-  items: ReconciliationItem[]
+  items: ReconciliationItem[],
+  tenantId: string = getActiveTenantId()
 ) => {
   if (!db) return;
   const batch = writeBatch(db);
 
   // Save main record
   batch.set(
-    doc(db, 'artifacts', APP_ID, 'public', 'data', 'reconciliations', reconciliation.id),
+    REC_DOC('reconciliations', reconciliation.id, tenantId),
     reconciliation
   );
 
   // Save all items
   for (const item of items) {
     batch.set(
-      doc(db, 'artifacts', APP_ID, 'public', 'data', 'reconciliation_items', item.id),
+      REC_DOC('reconciliation_items', item.id, tenantId),
       item
     );
   }
@@ -191,27 +196,24 @@ export const saveReconciliationData = async (
 
 export const updateReconciliationItem = async (
   itemId: string,
-  updates: Partial<ReconciliationItem>
+  updates: Partial<ReconciliationItem>,
+  tenantId: string = getActiveTenantId()
 ) => {
   if (!db) return;
   await setDoc(
-    doc(db, 'artifacts', APP_ID, 'public', 'data', 'reconciliation_items', itemId),
+    REC_DOC('reconciliation_items', itemId, tenantId),
     updates,
     { merge: true }
   );
 };
 
-export const fetchCashMovements = async (startDate: string, endDate: string) => {
+export const fetchCashMovements = async (startDate: string, endDate: string, tenantId: string = getActiveTenantId()) => {
   if (!db) return [];
-  // The daily cash is stored in `bea_data/{tenantId}/caixa/{date}`
-  // We need to fetch the range of days.
-  // We will generate the list of dates in the range and fetch them all.
   
   const movements: any[] = [];
   const start = new Date(startDate);
   const end = new Date(endDate);
   
-  // Guard against infinite loops or overly large ranges
   const maxDays = 90; 
   let daysCount = 0;
 
@@ -222,25 +224,23 @@ export const fetchCashMovements = async (startDate: string, endDate: string) => 
     const dateStr = `${yyyy}-${mm}-${dd}`;
 
     try {
-      const snap = await getDoc(doc(db, 'bea_data', APP_ID, 'caixa', dateStr));
+      const snap = await getDoc(REC_DOC('caixa', dateStr, tenantId));
       if (snap.exists()) {
         const data = snap.data();
         if (data.movimentos && Array.isArray(data.movimentos)) {
           for (const m of data.movimentos) {
-            // We only care about entries (entradas), as exits are usually payments made by the clinic
             if (m.tipo === 'entrada') {
               movements.push({
                 ...m,
-                date: dateStr // Add the context date
+                date: dateStr
               });
             }
           }
         }
       }
     } catch (e) {
-      console.error(`Error fetching cash for ${dateStr}:`, e);
+      console.error(`Error fetching cash for date ${dateStr}:`, e);
     }
-    
     daysCount++;
   }
 

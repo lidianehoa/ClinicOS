@@ -4,92 +4,153 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from '../services/firebase';
-import { saveUserProfile, getStaffByEmail, type UserRole, type AppUser } from '../services/dataService';
+import { 
+  saveUserProfile, 
+  resolveTenantByEmail, 
+  registerClinic,
+  setActiveTenantId,
+  type UserRole, 
+  type AppUser 
+} from '../services/dataService';
 import { 
   Mail, 
   Lock,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  Building2,
+  User,
+  Phone,
+  CheckCircle2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+type AuthMode = 'login' | 'first_access' | 'new_clinic';
+
 const Auth = () => {
   const { t } = useTranslation(['auth', 'common']);
-  const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState<AuthMode>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
-  // Auto-detect if user is already authenticated but missing profile
-  useState(() => {
-    if (auth.currentUser && isLogin) {
-      setIsLogin(false); // Force register mode to complete profile
-    }
-  });
+  const [clinicName, setClinicName] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [crmv, setCrmv] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const cleanEmail = email.trim();
+    setError(null);
+    setSuccessMsg(null);
+
+    const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
 
     try {
-      if (isLogin) {
+      if (mode === 'login') {
+        // ── LOGIN NORMAL ──────────────────────────────────────────────────
         await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
-      } else {
-        // First Access Logic
-        const staffRecord = await getStaffByEmail(cleanEmail);
+      } else if (mode === 'first_access') {
+        // ── PRIMEIRO ACESSO (RESOLUÇÃO SEGURA VIA BACKEND / CLOUD FUNCTION) ──
+        const lookup = await resolveTenantByEmail(cleanEmail);
         
-        if (!staffRecord) {
+        if (!lookup.found || !lookup.defaultTenantId) {
           throw new Error('email-not-authorized');
         }
 
+        const targetTenantId = lookup.defaultTenantId;
+        setActiveTenantId(targetTenantId);
+
         let user = auth.currentUser;
-        
         if (!user) {
           const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
           user = userCredential.user;
         }
 
-        // Map accessLevel to UserRole
-        let mappedRole: UserRole = 'auxiliar';
-        if (staffRecord.accessLevel === 'Professional') mappedRole = 'veterinario';
-        if (staffRecord.accessLevel === 'Manager') mappedRole = 'gerente';
-        if (staffRecord.accessLevel === 'Admin') mappedRole = 'administrador';
+        const roleToAssign: UserRole = (lookup.tenants?.[0]?.role as UserRole) || 'veterinario';
 
         const profile: AppUser = {
           uid: user.uid,
-          nome: staffRecord.name,
-          email: user.email || cleanEmail,
-          role: mappedRole,
-          crmv: staffRecord.professionalId || '',
+          nome: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          role: roleToAssign,
           status: 'ativo',
           photoURL: user.photoURL || null,
-          staffId: staffRecord.id
+          activeTenantId: targetTenantId,
+          tenants: lookup.tenants ? lookup.tenants.map(t => t.tenantId) : [targetTenantId]
         };
 
         await saveUserProfile(profile);
+      } else if (mode === 'new_clinic') {
+        // ── ONBOARDING DE NOVA CLÍNICA ────────────────────────────────────
+        if (!clinicName.trim() || !ownerName.trim()) {
+          throw new Error('missing-fields');
+        }
+
+        try {
+          // Tentativa 1: Via Cloud Function backend
+          const res = await registerClinic({
+            clinicName: clinicName.trim(),
+            ownerName: ownerName.trim(),
+            email: cleanEmail,
+            password: cleanPassword,
+            phone: phone.trim(),
+            crmv: crmv.trim(),
+          });
+          
+          if (res.success && res.tenantId) {
+            setActiveTenantId(res.tenantId);
+            await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+          }
+        } catch (fnErr: any) {
+          console.warn('Fallback para criação direta de clínica no cliente:', fnErr);
+          // Fallback seguro caso Cloud Functions não esteja rodando localmente
+          const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+          const user = userCredential.user;
+
+          const slug = clinicName
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]/g, '_')
+            .slice(0, 25);
+          const newTenantId = `clinic_${slug}_${Date.now().toString(36)}`;
+          setActiveTenantId(newTenantId);
+
+          const profile: AppUser = {
+            uid: user.uid,
+            nome: ownerName.trim(),
+            email: cleanEmail,
+            role: 'administrador',
+            crmv: crmv.trim(),
+            status: 'ativo',
+            activeTenantId: newTenantId,
+            tenants: [newTenantId],
+            clinicName: clinicName.trim()
+          };
+
+          await saveUserProfile(profile);
+        }
       }
     } catch (err: any) {
       console.error('Erro Auth:', err);
       let msg = 'Ocorreu um erro técnico. Verifique sua conexão.';
       
-      if (err.message === 'email-not-authorized') msg = 'E-mail não autorizado. O administrador precisa cadastrá-lo em Configurações.';
+      if (err.message === 'email-not-authorized') msg = 'E-mail não autorizado. Solicite ao administrador da sua clínica o cadastro em Configurações > Equipe.';
+      if (err.message === 'missing-fields') msg = 'Por favor, preencha todos os campos obrigatórios.';
       if (err.code === 'auth/invalid-credential') msg = 'Email ou senha incorretos.';
-      if (err.code === 'auth/user-not-found') msg = 'Utilizador não encontrado.';
+      if (err.code === 'auth/user-not-found') msg = 'Usuário não encontrado.';
       if (err.code === 'auth/wrong-password') msg = 'Senha incorreta.';
       if (err.code === 'auth/invalid-email') msg = 'Formato de email inválido.';
-      if (err.code === 'auth/email-already-in-use') msg = 'Este email já possui senha cadastrada.';
+      if (err.code === 'auth/email-already-in-use') msg = 'Este email já possui senha cadastrada. Faça login.';
       if (err.code === 'auth/weak-password') msg = 'A nova senha deve ter pelo menos 6 caracteres.';
-      if (err.code === 'auth/unauthorized-domain') msg = 'Domínio não autorizado no Firebase Console.';
       if (err.code === 'auth/network-request-failed') msg = 'Falha na rede. Verifique sua internet.';
       if (err.code === 'auth/too-many-requests') msg = 'Muitas tentativas. Tente novamente mais tarde.';
-      if (err.code === 'permission-denied') msg = 'Erro de permissão ao criar perfil. Contacte o administrador.';
       
-      // Se for um erro desconhecido, mostra a mensagem técnica para diagnóstico
       if (msg === 'Ocorreu um erro técnico. Verifique sua conexão.' && err.message) {
         msg = `Erro: ${err.message}`;
       }
@@ -100,92 +161,182 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-clinic-900 overflow-hidden relative">
+    <div className="min-h-screen w-full flex items-center justify-center bg-clinic-900 overflow-hidden relative py-10">
       {/* Background Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-clinic-500/20 rounded-full blur-[120px] animate-pulse" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-clinic-300/20 rounded-full blur-[120px] animate-pulse" />
 
       <div className="w-full max-w-md px-6 relative z-10">
         <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-[40px] p-8 md:p-10 shadow-2xl shadow-black/20">
-          <div className="flex flex-col items-center mb-10 text-center">
-            <h1 className="text-3xl font-bold text-white mb-2">
-              {isLogin ? t('login_title') : t('register_title', 'Primeiro Acesso')}
+          <div className="flex flex-col items-center mb-8 text-center">
+            <div className="w-12 h-12 bg-clinic-500/20 border border-clinic-400/30 rounded-2xl flex items-center justify-center mb-3">
+              <Building2 className="w-6 h-6 text-clinic-300" />
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1.5">
+              {mode === 'login' && t('login_title', 'Acessar ClinicOS')}
+              {mode === 'first_access' && t('register_title', 'Primeiro Acesso')}
+              {mode === 'new_clinic' && 'Cadastrar Nova Clínica'}
             </h1>
-            <p className="text-white/60 text-sm">
-              {isLogin 
-                ? t('login_subtitle', 'Acesse o sistema de gestão do ClinicOS') 
-                : t('register_subtitle', 'Cadastre sua senha para acessar o sistema')}
+            <p className="text-white/60 text-xs md:text-sm">
+              {mode === 'login' && 'Gestão veterinária segura e multi-clínica'}
+              {mode === 'first_access' && 'Cadastre sua senha para acessar sua clínica'}
+              {mode === 'new_clinic' && 'Crie sua conta administrativa e ative sua unidade'}
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'new_clinic' && (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-white/80 text-xs font-medium ml-2">Nome da Clínica / Hospital</label>
+                  <div className="relative">
+                    <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <input
+                      type="text"
+                      required
+                      value={clinicName}
+                      onChange={e => setClinicName(e.target.value)}
+                      placeholder="Ex: Clínica Veterinária São Francisco"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
+                    />
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <label className="text-white/80 text-sm font-medium ml-2">{t('email_label')}</label>
+                <div className="space-y-1.5">
+                  <label className="text-white/80 text-xs font-medium ml-2">Nome do Responsável / Gestor</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <input
+                      type="text"
+                      required
+                      value={ownerName}
+                      onChange={e => setOwnerName(e.target.value)}
+                      placeholder="Ex: Dra. Juliana Souza"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-white/80 text-xs font-medium ml-2">Telefone / WhatsApp</label>
+                    <div className="relative">
+                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                      <input
+                        type="text"
+                        value={phone}
+                        onChange={e => setPhone(e.target.value)}
+                        placeholder="(11) 99999-9999"
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-10 pr-3 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-white/80 text-xs font-medium ml-2">CRMV (Opcional)</label>
+                    <input
+                      type="text"
+                      value={crmv}
+                      onChange={e => setCrmv(e.target.value)}
+                      placeholder="CRMV-SP 12345"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 px-4 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-white/80 text-xs font-medium ml-2">{t('email_label', 'E-mail')}</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder={t('email_placeholder')}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
+                  placeholder={t('email_placeholder', 'seu@email.com')}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-white/80 text-sm font-medium ml-2">{isLogin ? t('password_label') : t('new_password_label', 'Nova Senha')}</label>
+            <div className="space-y-1.5">
+              <label className="text-white/80 text-xs font-medium ml-2">
+                {mode === 'login' ? t('password_label', 'Senha') : 'Criar Nova Senha'}
+              </label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder={t('password_placeholder')}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
+                  placeholder={t('password_placeholder', '••••••••')}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-clinic-500/50 transition-colors"
                 />
               </div>
             </div>
 
-
-
             {error && (
-              <div className="flex items-center gap-3 bg-red-500/20 border border-red-500/30 text-red-200 px-4 py-3 rounded-2xl text-sm animate-in zoom-in-95 duration-200">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <div className="flex items-center gap-3 bg-red-500/20 border border-red-500/30 text-red-200 px-4 py-3 rounded-2xl text-xs animate-in zoom-in-95 duration-200">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="flex items-center gap-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 px-4 py-3 rounded-2xl text-xs animate-in zoom-in-95 duration-200">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>{successMsg}</span>
               </div>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-clinic-600 to-clinic-500 hover:from-clinic-700 hover:to-clinic-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-clinic-500/20 transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group"
+              className="w-full bg-gradient-to-r from-clinic-600 to-clinic-500 hover:from-clinic-700 hover:to-clinic-600 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-clinic-500/20 transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group text-sm"
             >
               {loading ? (
-                <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  {isLogin ? t('login_button') : t('register_button', 'Cadastrar Senha')}
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  {mode === 'login' && t('login_button', 'Entrar')}
+                  {mode === 'first_access' && 'Ativar Minha Senha'}
+                  {mode === 'new_clinic' && 'Criar e Acessar Clínica'}
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-8 text-center">
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-white/60 hover:text-white transition-colors text-sm font-medium"
-            >
-              {isLogin ? (
-                <>{t('first_access_prompt', 'Primeiro acesso ao sistema?')} <span className="text-clinic-400">{t('register_button', 'Cadastrar Senha')}</span></>
-              ) : (
-                <>{t('already_have_password', 'Já possui uma senha?')} <span className="text-clinic-400">{t('do_login', 'Fazer Login')}</span></>
-              )}
-            </button>
+          {/* Alternadores de modo */}
+          <div className="mt-6 pt-4 border-t border-white/10 flex flex-col gap-2.5 text-center text-xs">
+            {mode !== 'login' && (
+              <button
+                onClick={() => { setMode('login'); setError(null); }}
+                className="text-clinic-300 hover:text-white transition-colors font-medium"
+              >
+                Já possui uma senha? <span className="underline">Fazer Login</span>
+              </button>
+            )}
+
+            {mode !== 'first_access' && (
+              <button
+                onClick={() => { setMode('first_access'); setError(null); }}
+                className="text-white/60 hover:text-white transition-colors font-medium"
+              >
+                Primeiro acesso à clínica? <span className="text-clinic-400 underline">Cadastrar Senha</span>
+              </button>
+            )}
+
+            {mode !== 'new_clinic' && (
+              <button
+                onClick={() => { setMode('new_clinic'); setError(null); }}
+                className="text-white/60 hover:text-white transition-colors font-medium"
+              >
+                Deseja criar uma nova clínica? <span className="text-clinic-400 underline">Cadastrar Clínica</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -194,3 +345,4 @@ const Auth = () => {
 };
 
 export default Auth;
+

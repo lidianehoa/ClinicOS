@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import AppShell from './components/layout/AppShell';
-import Monitoramento from './pages/Monitoramento';
 import Agendamentos from './pages/Agendamentos';
 import Caixa from './pages/Caixa';
 import Dashboard from './pages/Dashboard';
@@ -10,7 +9,6 @@ import AssistenteIA from './pages/AssistenteIA';
 import Configuracoes from './pages/Configuracoes';
 import AdminConsole from './pages/AdminConsole';
 import Products from './pages/products/Products';
-import AIChat from './components/AIChat';
 import Auth from './pages/Auth';
 import MedicalAuth from './pages/medico/MedicalAuth';
 import MedicalLayout from './components/layout/MedicalLayout';
@@ -18,19 +16,33 @@ import MedicalDashboard from './pages/medico/MedicalDashboard';
 import ConsultationsModule from './pages/medico/ConsultationsModule';
 import HospitalizationsModule from './pages/medico/HospitalizationsModule';
 import SurgeriesModule from './pages/medico/SurgeriesModule';
-import Pricing from './pages/Pricing';
+import ContasPagar from './pages/financeiro/ContasPagar';
+import ContasReceber from './pages/financeiro/ContasReceber';
+import RelatoriosFinanceiros from './pages/financeiro/RelatoriosFinanceiros';
+import Servicos from './pages/cadastros/Servicos';
 import Reconciliation from './pages/Reconciliation';
 import PDVAutonomo from './pages/PDVAutonomo';
+import CasoClinicoDetail from './pages/medico/CasoClinicoDetail';
+import Animais from './pages/Animais';
+import Historico from './pages/Historico';
+import Responsaveis from './pages/Responsaveis';
+import Consulta from './pages/Consulta';
 import { auth, onAuthStateChanged, signOut } from './services/firebase';
-import { subscribeUserProfile as getUserProfile, type AppUser, getStaffByEmail, saveUserProfile } from './services/dataService';
+import { 
+  subscribeUserProfile as getUserProfile, 
+  type AppUser, 
+  setActiveTenantId 
+} from './services/dataService';
 import SetupGuide from './pages/SetupGuide';
+import { PortalFarmacia } from './pages/PortalFarmacia';
 
-export type ActiveTab = 'monitoramento' | 'agendamentos' | 'pricing' | 'products' | 'reconciliation' | 'caixa' | 'dashboard' | 'crm' | 'importar' | 'assistente' | 'configuracoes' | 'admin' | 'consultas' | 'internacao' | 'cirurgias';
+export type ActiveTab = 'contas-pagar' | 'contas-receber' | 'relatorios-financeiros' | 'servicos' | 'agendamentos' | 'products' | 'reconciliation' | 'caixa' | 'dashboard' | 'crm' | 'importar' | 'assistente' | 'configuracoes' | 'admin' | 'consultas' | 'internacao' | 'cirurgias' | 'caso-clinico' | 'responsaveis' | 'animais' | 'historico';
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('monitoramento');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
 
 
   // Auth & Profile
@@ -41,7 +53,7 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') as ActiveTab;
-    if (tab && ['monitoramento', 'agendamentos', 'pricing', 'products', 'reconciliation', 'caixa', 'dashboard', 'crm', 'importar', 'assistente', 'configuracoes', 'admin', 'consultas', 'internacao', 'cirurgias'].includes(tab)) {
+    if (tab && ['contas-pagar', 'contas-receber', 'relatorios-financeiros', 'servicos', 'agendamentos', 'products', 'reconciliation', 'caixa', 'dashboard', 'crm', 'importar', 'assistente', 'configuracoes', 'admin', 'consultas', 'internacao', 'cirurgias', 'caso-clinico', 'responsaveis', 'animais', 'historico'].includes(tab)) {
       setActiveTab(tab);
     }
   }, []);
@@ -87,13 +99,10 @@ function App() {
       const unsubProfile = getUserProfile(user.uid, (p) => {
         resolved = true;
         clearTimeout(timeout);
-        if (p && !p.staffId) {
-          getStaffByEmail(p.email).then(staffRecord => {
-            if (staffRecord) {
-              p.staffId = staffRecord.id;
-              saveUserProfile({ ...p, staffId: staffRecord.id }).catch(console.error);
-            }
-          }).catch(console.error);
+        if (p) {
+          if (p.activeTenantId) {
+            setActiveTenantId(p.activeTenantId);
+          }
         }
         setProfile(p);
         setIsInitializing(false);
@@ -110,13 +119,12 @@ function App() {
 
   // A migração foi removida pois o banco de dados já está estabilizado.
 
-  const handleNavigateToCRM = (customerId: string) => {
-    setSelectedCustomerId(customerId);
-    setActiveTab('crm');
-  };
 
-  // Rota /setup é pública — sem autenticação e sem loading
+
+  // Rotas públicas (sem autenticação e sem loading)
+  if (window.location.pathname.startsWith('/farmacia')) return <PortalFarmacia />;
   if (window.location.pathname === '/setup') return <SetupGuide />;
+  if (window.location.pathname.includes('/verificar/')) return <PortalFarmacia />;
 
   // ── Loading / migração ────────────────────────────────────────────────────
   if (isInitializing) {
@@ -186,18 +194,28 @@ function App() {
       onLogout={handleLogout}
     >
 
-      {activeTab === 'monitoramento' && (
-        <Monitoramento 
-          onNavigateToCRM={handleNavigateToCRM} 
-          userProfile={profile}
-        />
-      )}
       {activeTab === 'agendamentos' && <Agendamentos userProfile={profile} />}
-      {activeTab === 'pricing' && <Pricing />}
+      {activeTab === 'servicos' && <Servicos />}
+      {activeTab === 'contas-pagar' && <ContasPagar />}
+      {activeTab === 'contas-receber' && <ContasReceber />}
+      {activeTab === 'relatorios-financeiros' && <RelatoriosFinanceiros />}
       {activeTab === 'products' && <Products />}
       {activeTab === 'reconciliation' && <Reconciliation />}
       {activeTab === 'caixa' && <Caixa userProfile={profile} />}
-      {activeTab === 'dashboard' && <Dashboard />}
+      {activeTab === 'dashboard' && <Dashboard userProfile={profile} />}
+      {activeTab === 'responsaveis' && (
+        <Responsaveis 
+          onNavigateToAnimal={(pId) => {
+            setSelectedPatientId(pId);
+            setActiveTab('animais');
+          }}
+          onOpenConsulta={(pId) => {
+            setSelectedPatientId(pId);
+            setActiveTab('consultas');
+          }}
+          userProfile={profile} 
+        />
+      )}
       {activeTab === 'crm' && (
         <CRM
           selectedCustomerId={selectedCustomerId}
@@ -205,6 +223,24 @@ function App() {
           userProfile={profile}
         />
       )}
+      {activeTab === 'animais' && (
+        <Animais 
+          onOpenConsulta={(pId) => {
+            setSelectedPatientId(pId);
+            setActiveTab('consultas');
+          }}
+          onNavigateToResponsavel={() => setActiveTab('responsaveis')}
+          userProfile={profile} 
+        />
+      )}
+      {activeTab === 'consultas' && (
+        <Consulta 
+          selectedPatientId={selectedPatientId} 
+          onSelectPatient={setSelectedPatientId} 
+          userProfile={profile} 
+        />
+      )}
+      {activeTab === 'historico' && <Historico userProfile={profile} />}
       {activeTab === 'importar' && (
         <ImportadorDados 
           onNavigateToCRM={() => setActiveTab('crm')} 
@@ -213,8 +249,8 @@ function App() {
       )}
       {activeTab === 'assistente' && <AssistenteIA userProfile={profile} />}
       {activeTab === 'configuracoes' && <Configuracoes userProfile={profile} />}
+      {activeTab === 'caso-clinico' && <CasoClinicoDetail userProfile={profile} />}
       {activeTab === 'admin' && <AdminConsole userProfile={profile} />}
-      <AIChat />
     </AppShell>
   );
 }

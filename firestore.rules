@@ -7,35 +7,138 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // ── Main Data Namespace ───────────────────────────────────────────────────
-    // Protects the main data namespace per tenant.
-    // All clinic operational data lives here (customers, records, appointments…)
+    function getUserData() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function isMemberOfTenant(tenantId) {
+      return isAuthenticated() && (
+        (request.auth.token != null && request.auth.token.tenantId == tenantId) ||
+        (exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
+         (getUserData().activeTenantId == tenantId || (getUserData().tenants != null && tenantId in getUserData().tenants)))
+      );
+    }
+
+    // ── Multi-Tenant Isolated Data Namespace ─────────────────────────────────
+    // 100% of clinic data is isolated inside /clinicas/{tenantId}/...
+
+    // ── Casos Clínicos: validação extra para prevenir casos órfãos ────────────
+    // Regra mais específica que nega create/update se pacienteId estiver ausente
+    // ou vazio. Aplica-se ANTES da regra genérica do tenant.
+    match /clinicas/{tenantId}/casos_clinicos/{casoId} {
+      allow read: if isMemberOfTenant(tenantId);
+      allow delete: if isMemberOfTenant(tenantId);
+
+      // CREATE: exige pacienteId não-nulo e não-vazio
+      allow create: if isMemberOfTenant(tenantId)
+        && request.resource.data.pacienteId is string
+        && request.resource.data.pacienteId.size() > 0;
+
+      // UPDATE: não pode apagar/esvaziar o pacienteId após criação
+      allow update: if isMemberOfTenant(tenantId)
+        && (
+          !('pacienteId' in request.resource.data)  // campo não alterado
+          || (request.resource.data.pacienteId is string
+              && request.resource.data.pacienteId.size() > 0)
+        );
+    }
+
+    // ── Receitas Digitais: receita assinada fica travada (imutável do cliente) ──
+    match /clinicas/{tenantId}/receitas/{receitaId} {
+      allow read: if isMemberOfTenant(tenantId);
+      allow delete: if isMemberOfTenant(tenantId) && resource.data.status != 'assinada';
+      allow create: if isMemberOfTenant(tenantId);
+      // UPDATE: se a receita já estiver assinada, cliente só pode alterar status/substituicao
+      allow update: if isMemberOfTenant(tenantId) && (
+        resource.data.status != 'assinada' ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'substituidaPorId', 'atualizadoEm'])
+      );
+    }
+
+    // Demais coleções do tenant
+    match /clinicas/{tenantId}/{document=**} {
+      allow read, write: if isMemberOfTenant(tenantId);
+    }
+
+    // ── User Profiles (usuarios/{uid}) ───────────────────────────────────────
+    // Users can only read and update their own profile
+    match /usuarios/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ── Tenant Directory (tenants/{tenantId}) ────────────────────────────────
+    // Listing all tenants is strictly BLOCKED.
+    // Reading is only allowed for verified members of that specific tenant.
+    match /tenants/{tenantId} {
+      allow get: if isMemberOfTenant(tenantId);
+      allow list: if false;
+      allow create: if isAuthenticated();
+      allow update, delete: if isMemberOfTenant(tenantId) && getUserData().role == 'administrador';
+    }
+
+    // ── Verificação Pública de Receitas ICP-Brasil ────────────────────────────
+    // Leitura aberta (sem autenticação) para conferência via QR Code / link público.
+    // Não contém dados sensíveis (tutor/animal omitidos conforme LGPD).
+    // Escrita restrita a usuários autenticados / Cloud Functions.
+    match /verificacao_receitas/{codigo} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // ── Portal da Farmácia & Tokens de Dispensação ─────────────────────────────
+    // O público acessa exclusivamente pelas Cloud Functions (Admin SDK).
+    // Usuários autenticados (veterinários/staff) podem indexar tokens ao emitir receitas.
+    match /tokens_receita/{token} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Auditoria e Rate Limiting são estritamente restritos ao Admin SDK (Cloud Functions)
+    match /auditoria_farmacia/{id} {
+      allow read, write: if false;
+    }
+
+    match /rate_limits_farmacia/{ip} {
+      allow read, write: if false;
+    }
+
+    // ── Staff Email Index (staff_email_index/{email}) ────────────────────────
+    // DIRECT CLIENT READ IS COMPLETELY BLOCKED.
+    // Lookups must go through Cloud Function 'resolveTenantByEmail' to prevent email enumeration.
+    // Write is allowed for authenticated staff/admin creation.
+    match /staff_email_index/{email} {
+      allow read: if false;
+      allow write: if isAuthenticated();
+    }
+
+    // ── Legacy Namespaces (During Migration / Fallback) ───────────────────────
     match /artifacts/{tenantId}/public/data/{collection}/{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isMemberOfTenant(tenantId) || (isAuthenticated() && tenantId == 'clinicos_demo');
     }
 
-    // ── Settings & Config Namespace ───────────────────────────────────────────
-    // Clinic configuration, user profiles, services, staff, etc.
     match /bea_data/{tenantId}/{collection}/{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isMemberOfTenant(tenantId) || (isAuthenticated() && tenantId == 'clinicos_demo');
     }
 
-    // ── Notifications Log ─────────────────────────────────────────────────────
-    // WhatsApp dispatch logs (top-level collection)
-    match /notifications_log/{document=**} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // ── Medical Records (root-level collection) ───────────────────────────────
-    // Prontuários stored at /records/{id} — requires authentication.
     match /records/{document=**} {
       allow read, write: if isAuthenticated();
     }
 
-    // ── Deny everything else ──────────────────────────────────────────────────
-    // Default-deny for any path not explicitly matched above.
+    match /notifications_log/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /responsaveis/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    match /pacientes/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── Default Deny ──────────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+

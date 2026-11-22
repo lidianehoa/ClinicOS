@@ -1,6 +1,24 @@
 import { db, functions } from './firebase';
 import { httpsCallable } from 'firebase/functions';
 import {
+  generateDispensationToken,
+  calcularValidadeReceita,
+  PRAZOS_VALIDADE_PADRAO,
+  formatDataExtensoPtBR,
+  formatIdadeCalculada,
+  getTituloCentralReceita,
+  mascararCpf
+} from './dispensationService';
+export {
+  generateDispensationToken,
+  calcularValidadeReceita,
+  PRAZOS_VALIDADE_PADRAO,
+  formatDataExtensoPtBR,
+  formatIdadeCalculada,
+  getTituloCentralReceita,
+  mascararCpf
+};
+import {
   collection,
   doc,
   setDoc,
@@ -75,6 +93,10 @@ const caixaDoc = (date: string, tenantId: string = getActiveTenantId()) => TENAN
 
 export const termosAtendimentoCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('termos_atendimento', tenantId);
 export const auditoriasComplianceCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('auditorias_compliance', tenantId);
+export const receitasCol = (tenantId: string = getActiveTenantId()) => TENANT_COL('receitas', tenantId);
+export const verificacaoReceitasCol = () => collection(db!, 'verificacao_receitas');
+export const tokensReceitaCol = () => collection(db!, 'tokens_receita');
+export const auditoriaFarmaciaCol = () => collection(db!, 'auditoria_farmacia');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIPOS
@@ -156,12 +178,170 @@ export interface AppUser {
   nome: string;
   role: UserRole;
   crmv?: string;
+  cpf?: string;
+  registroMapa?: string;
+  cpfPrescritorModo?: 'ocultar' | 'mascarado' | 'completo';
   status: 'ativo' | 'inativo';
   photoURL?: string | null;
   staffId?: string;
   activeTenantId?: string;
   tenants?: string[];
   clinicName?: string;
+}
+
+// ─── Assinatura de Receitas ICP-Brasil & Token de Dispensação ───────────────
+export type StatusReceita = 'rascunho' | 'aguardando_assinatura' | 'assinada' | 'substituida' | 'cancelada';
+
+export type SubtipoReceita = 'simples' | 'controle_especial' | 'antimicrobiano' | 'magistral';
+export type StatusDispensacao = 'nao_dispensada' | 'parcialmente_dispensada' | 'dispensada' | 'cancelada';
+
+export interface ItemReceitaPrescrita {
+  id: string;
+  produto: string; // Ex: "Amoxicilina + Clavulanato de Potássio"
+  concentracao?: string; // Ex: "250mg"
+  quantidadePrescrita: number; // Ex: 1
+  unidade: string; // Ex: "caixa(s)", "frasco(s)", "comprimido(s)"
+  quantidadeExtenso: string; // Ex: "1 (uma) caixa com 10 (dez) comprimidos"
+  posologia: string; // Ex: "Administrar 1 comprimido por via oral a cada 12 horas durante 7 dias"
+  quantidadeDispensada?: number;
+  saldoRestante?: number;
+}
+
+export interface DispensacaoItemInfo {
+  itemId: string;
+  produto: string;
+  quantidade: number;
+  lote?: string;
+}
+
+export interface DispensacaoRegistro {
+  id: string;
+  protocolo: string; // DISP-{token}-{n}
+  dataHora: string;
+  farmaceuticoNome: string;
+  farmaceuticoCrf: string;
+  farmaceuticoUf: string;
+  farmaciaNome: string;
+  farmaciaCnpj: string;
+  itensDispensados: DispensacaoItemInfo[];
+  declaracaoConferida: boolean;
+  ip?: string;
+  userAgent?: string;
+}
+
+export interface TokenReceitaIndex {
+  token: string;
+  tenantId: string;
+  receitaId: string;
+  criadoEm: string;
+  status: StatusReceita;
+  statusDispensacao: StatusDispensacao;
+  subtipo: SubtipoReceita;
+  validadeAte: string;
+  requerAssinatura: boolean;
+  isAssinada: boolean;
+  pdfAssinadoUrl?: string;
+}
+
+export interface AssinaturaDigitalInfo {
+  em: string;
+  titular: string;
+  cpfMascarado: string;
+  emissorAC: string;
+  serial: string;
+  hashSha256: string;
+  metodo: 'upload' | 'psc';
+  provedor?: string;
+}
+
+export interface ReceitaDigital {
+  id: string;
+  codigoVerificacao: string; // 10 caracteres aleatórios para compatibilidade
+  tokenDispensacao: string; // Formato DDMMAAAA-XXXXXX
+  tenantId: string;
+  pacienteId: string;
+  atendimentoId?: string;
+  tipo: 'receita_simples' | 'receita_manipulada';
+  subtipo: SubtipoReceita;
+  status: StatusReceita;
+  statusDispensacao: StatusDispensacao;
+
+  // Veterinário
+  veterinarioId: string;
+  veterinarioNome: string;
+  veterinarioCrmv: string;
+  veterinarioCpf?: string;
+  registroMapa?: string;
+  cpfPrescritorModo?: 'ocultar' | 'mascarado' | 'completo';
+
+  // Paciente
+  pacienteNome: string;
+  pacienteEspecie?: string;
+  pacienteRaca?: string;
+  pacienteIdade?: string;
+  pacientePeso?: number | string;
+  pacienteDataPeso?: string;
+
+  // Tutor
+  tutorNome: string;
+  tutorCpf?: string;
+  tutorTelefone?: string;
+  tutorEndereco?: string;
+
+  // Itens e Conteúdo Clínico Estruturado
+  itens: ItemReceitaPrescrita[];
+  orientacoes?: string[];
+  observacoesResponsavel?: string;
+  conteudoPrescricao: string;
+  conteudoClinico?: string;
+  baseLegal: string;
+  isControlado?: boolean;
+  numeroNotificacaoSipeagro?: string;
+
+  // Validade
+  validadeDias: number;
+  validadeAte: string;
+
+  // Dispensações Registradas
+  dispensacoes?: DispensacaoRegistro[];
+
+  // Cancelamento
+  motivoCancelamento?: string;
+  canceladoEm?: string;
+  canceladoPor?: string;
+
+  // Controle de Versões (para receitas substituídas)
+  versao: number;
+  substituiReceitaId?: string;
+  substituidaPorReceitaId?: string;
+
+  // Integridade do Arquivo PDF
+  originalSize?: number;
+  originalHashSha256?: string;
+  originalPdfUrl?: string;
+  pdfAssinadoPath?: string;
+  pdfAssinadoUrl?: string;
+
+  // Metadados da Assinatura Digital
+  assinatura?: AssinaturaDigitalInfo;
+
+  criadoEm: string;
+  atualizadoEm: string;
+  assinadoEm?: string;
+}
+
+export interface VerificacaoReceitaPublica {
+  codigo: string;
+  tenantId: string;
+  receitaId: string;
+  nomeVeterinario: string;
+  crmvVeterinario: string;
+  dataEmissao: string;
+  dataAssinatura?: string;
+  status: StatusReceita;
+  pdfUrl?: string;
+  hashSha256?: string;
+  atualizadoEm?: string;
 }
 
 export interface Interaction {
@@ -646,8 +826,9 @@ export const registrarVenda = async (
   total: number,
   operador: string,
   metodoPagamento: string,
-  clienteInfo?: { nome: string; animal: string },
-  maquininha: string = 'N/A'
+  clienteInfo?: { nome: string; animal: string; clienteId?: string },
+  maquininha: string = 'N/A',
+  _dadosPrazo?: any
 ): Promise<{ vendaId: string }> => {
   if (!db) throw new Error('Firestore não inicializado');
   const vendaId = `venda_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -905,6 +1086,7 @@ export interface StaffMember {
   name: string;
   role: string;
   professionalId: string;
+  cpf?: string;
   email: string;
   accessLevel: 'Professional' | 'Receptionist' | 'Manager' | 'Admin';
   phone: string;
@@ -1112,6 +1294,7 @@ export interface CasoClinico {
   resumoCaso?: string;
   criadoEm: string;
   tenantId: string;
+  isDomiciliar?: boolean;
 }
 
 export interface Exame {
@@ -1121,6 +1304,14 @@ export interface Exame {
   fileUrl: string;
   dataUpload: string;
   tenantId: string;
+  // Campos de encaminhamento
+  isEncaminhamento?: boolean;
+  encaminhamento?: {
+    clinicaOrigem?: string;
+    crmvOrigem?: string;
+    motivoEncaminhamento?: string;
+    veterinarioOrigem?: string;
+  };
 }
 
 export interface AnaliseClinica {
@@ -1140,6 +1331,7 @@ export interface AnaliseClinica {
   }[];
   textoExplicativoExames?: string;
   condutaSugerida: string;
+  prescricoesSugeridas?: string[];
   pdfUrl?: string;
   tenantId: string;
 }
@@ -1916,6 +2108,291 @@ export const subscribeAllTermosAtendimento = (
   });
 };
 
+// ─── GESTÃO DE RECEITAS DIGITAIS (ICP-BRASIL) ────────────────────────────────
+
+export function generateVerificationCode(length: number = 10): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let code = '';
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    for (let i = 0; i < length; i++) {
+      code += chars[array[i] % chars.length];
+    }
+  } else {
+    for (let i = 0; i < length; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+  }
+  return code;
+}
+
+export const saveReceita = async (receita: ReceitaDigital): Promise<string> => {
+  if (!db) throw new Error('Banco de dados não inicializado');
+  const safeId = receita.id || `rec_${Date.now()}`;
+  const tenantId = receita.tenantId || getActiveTenantId();
+  const codigo = receita.codigoVerificacao || generateVerificationCode(10);
+  const now = new Date().toISOString();
+
+  // Subtipo da receita
+  const subtipo: SubtipoReceita =
+    receita.subtipo ||
+    (receita.tipo === 'receita_manipulada'
+      ? 'magistral'
+      : receita.isControlado
+      ? 'controle_especial'
+      : 'simples');
+
+  // Token de dispensação (DDMMAAAA-XXXXXX) — gerado uma única vez
+  const token = receita.tokenDispensacao || generateDispensationToken(new Date(receita.criadoEm || now));
+
+  // Validade da receita
+  const { validadeAte, validadeDias } = calcularValidadeReceita(
+    subtipo,
+    receita.criadoEm || now,
+    receita.validadeDias
+  );
+
+  // Sanitização e cálculo dos saldos dos itens prescritos
+  const itensFormatados: ItemReceitaPrescrita[] = (receita.itens || []).map((item, idx) => {
+    const qtdPrescrita = Number(item.quantidadePrescrita) || 1;
+    const qtdDispensada = Number(item.quantidadeDispensada) || 0;
+    const saldo = item.saldoRestante !== undefined ? Number(item.saldoRestante) : Math.max(0, qtdPrescrita - qtdDispensada);
+    return {
+      ...item,
+      id: item.id || `item_${idx + 1}_${Date.now()}`,
+      quantidadePrescrita: qtdPrescrita,
+      quantidadeDispensada: qtdDispensada,
+      saldoRestante: saldo,
+    };
+  });
+
+  const statusDispensacao: StatusDispensacao = receita.statusDispensacao || 'nao_dispensada';
+
+  const fullReceita: ReceitaDigital = {
+    ...receita,
+    id: safeId,
+    tenantId,
+    codigoVerificacao: codigo,
+    tokenDispensacao: token,
+    subtipo,
+    itens: itensFormatados,
+    statusDispensacao,
+    validadeAte: receita.validadeAte || validadeAte,
+    validadeDias: receita.validadeDias || validadeDias,
+    versao: receita.versao || 1,
+    status: receita.status || 'rascunho',
+    criadoEm: receita.criadoEm || now,
+    atualizadoEm: now,
+  };
+
+  // 1. Salvar no namespace do tenant
+  await setDoc(doc(receitasCol(tenantId), safeId), fullReceita, { merge: true });
+
+  // 2. Registrar no índice global /tokens_receita/{token} (para consulta na farmácia)
+  const requerAssinatura = subtipo !== 'simples';
+  const isAssinada = fullReceita.status === 'assinada';
+  await setDoc(
+    doc(tokensReceitaCol(), token),
+    {
+      token,
+      tenantId,
+      receitaId: safeId,
+      criadoEm: fullReceita.criadoEm,
+      status: fullReceita.status,
+      statusDispensacao: fullReceita.statusDispensacao,
+      subtipo: fullReceita.subtipo,
+      validadeAte: fullReceita.validadeAte,
+      requerAssinatura,
+      isAssinada,
+      pdfAssinadoUrl: fullReceita.pdfAssinadoUrl || null,
+      atualizadoEm: now,
+    },
+    { merge: true }
+  );
+
+  // 3. Criar ou sincronizar registro na coleção pública de verificação
+  await setDoc(
+    doc(verificacaoReceitasCol(), codigo),
+    {
+      codigo,
+      tokenDispensacao: token,
+      tenantId,
+      receitaId: safeId,
+      nomeVeterinario: fullReceita.veterinarioNome || '',
+      crmvVeterinario: fullReceita.veterinarioCrmv || '',
+      dataEmissao: fullReceita.criadoEm,
+      dataAssinatura: fullReceita.assinadoEm || null,
+      status: fullReceita.status,
+      pdfUrl: fullReceita.pdfAssinadoUrl || null,
+      hashSha256: fullReceita.assinatura?.hashSha256 || null,
+      atualizadoEm: now,
+    },
+    { merge: true }
+  );
+
+  return safeId;
+};
+
+export const getReceita = async (
+  receitaId: string,
+  tenantId: string = getActiveTenantId()
+): Promise<ReceitaDigital | null> => {
+  if (!db) return null;
+  const snap = await getDoc(doc(receitasCol(tenantId), receitaId));
+  if (!snap.exists()) return null;
+  return snap.data() as ReceitaDigital;
+};
+
+export const substituirReceita = async (
+  receitaAntigaId: string,
+  dadosNova: Partial<ReceitaDigital>,
+  tenantId: string = getActiveTenantId()
+): Promise<ReceitaDigital> => {
+  if (!db) throw new Error('Banco de dados indisponível');
+  const antigaSnap = await getDoc(doc(receitasCol(tenantId), receitaAntigaId));
+  if (!antigaSnap.exists()) throw new Error('Receita anterior não encontrada');
+  const antiga = antigaSnap.data() as ReceitaDigital;
+
+  const now = new Date().toISOString();
+  const novoId = `rec_${Date.now()}`;
+  const novoCodigo = generateVerificationCode(10);
+  const novoToken = generateDispensationToken(new Date());
+
+  const novaReceita: ReceitaDigital = {
+    ...antiga,
+    ...dadosNova,
+    id: novoId,
+    tenantId,
+    codigoVerificacao: novoCodigo,
+    tokenDispensacao: novoToken,
+    versao: (antiga.versao || 1) + 1,
+    status: 'rascunho',
+    statusDispensacao: 'nao_dispensada',
+    substituiReceitaId: antiga.id,
+    dispensacoes: [],
+    originalSize: undefined,
+    originalHashSha256: undefined,
+    originalPdfUrl: undefined,
+    pdfAssinadoPath: undefined,
+    pdfAssinadoUrl: undefined,
+    assinatura: undefined,
+    assinadoEm: undefined,
+    criadoEm: now,
+    atualizadoEm: now,
+  };
+
+  // Travar a antiga como 'substituida'
+  await updateDoc(doc(receitasCol(tenantId), receitaAntigaId), {
+    status: 'substituida',
+    statusDispensacao: 'cancelada',
+    substituidaPorReceitaId: novoId,
+    atualizadoEm: now,
+  });
+
+  // Atualizar índice global de tokens da receita antiga
+  if (antiga.tokenDispensacao) {
+    await updateDoc(doc(tokensReceitaCol(), antiga.tokenDispensacao), {
+      status: 'substituida',
+      statusDispensacao: 'cancelada',
+      substituidaPorToken: novoToken,
+      atualizadoEm: now,
+    });
+  }
+
+  // Atualizar verificação pública da antiga
+  if (antiga.codigoVerificacao) {
+    await updateDoc(doc(verificacaoReceitasCol(), antiga.codigoVerificacao), {
+      status: 'substituida',
+      atualizadoEm: now,
+    });
+  }
+
+  // Salvar a nova versão
+  await saveReceita(novaReceita);
+  return novaReceita;
+};
+
+export const cancelarReceita = async (
+  receitaId: string,
+  motivo: string = 'Cancelada pelo prescritor',
+  canceladoPor?: string,
+  tenantId: string = getActiveTenantId()
+): Promise<void> => {
+  if (!db) return;
+  const now = new Date().toISOString();
+  const snap = await getDoc(doc(receitasCol(tenantId), receitaId));
+  if (!snap.exists()) return;
+  const rec = snap.data() as ReceitaDigital;
+
+  await updateDoc(doc(receitasCol(tenantId), receitaId), {
+    status: 'cancelada',
+    statusDispensacao: 'cancelada',
+    motivoCancelamento: motivo,
+    canceladoEm: now,
+    canceladoPor: canceladoPor || 'Prescritor',
+    atualizadoEm: now,
+  });
+
+  if (rec.tokenDispensacao) {
+    await updateDoc(doc(tokensReceitaCol(), rec.tokenDispensacao), {
+      status: 'cancelada',
+      statusDispensacao: 'cancelada',
+      motivoCancelamento: motivo,
+      atualizadoEm: now,
+    });
+  }
+
+  if (rec.codigoVerificacao) {
+    await updateDoc(doc(verificacaoReceitasCol(), rec.codigoVerificacao), {
+      status: 'cancelada',
+      atualizadoEm: now,
+    });
+  }
+};
+
+export const subscribeReceitas = (
+  pacienteId: string,
+  callback: (receitas: ReceitaDigital[]) => void,
+  tenantId: string = getActiveTenantId()
+) => {
+  if (!db) return () => {};
+  const q = query(receitasCol(tenantId), where('pacienteId', '==', pacienteId));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map((d) => d.data() as ReceitaDigital);
+    data.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+    callback(data);
+  });
+};
+
+export const subscribeAllReceitas = (
+  callback: (receitas: ReceitaDigital[]) => void,
+  tenantId: string = getActiveTenantId()
+) => {
+  if (!db) return () => {};
+  return onSnapshot(
+    receitasCol(tenantId),
+    (snapshot) => {
+      const data = snapshot.docs.map((d) => d.data() as ReceitaDigital);
+      data.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+      callback(data);
+    },
+    (err) => {
+      console.error('subscribeAllReceitas:', err);
+      callback([]);
+    }
+  );
+};
+
+export const getReceitaPublica = async (
+  codigo: string
+): Promise<VerificacaoReceitaPublica | null> => {
+  if (!db) return null;
+  const snap = await getDoc(doc(verificacaoReceitasCol(), codigo));
+  if (!snap.exists()) return null;
+  return snap.data() as VerificacaoReceitaPublica;
+};
+
 export const saveAuditoriaCompliance = async (auditoria: AuditoriaCompliance): Promise<void> => {
   if (!db) return;
   const safeId = auditoria.id || `audit_${Date.now()}`;
@@ -1988,6 +2465,67 @@ export interface ParametrosVitais {
   pressaoSistolica?: number | string;
 }
 
+export interface ObservacaoAntesToque {
+  estadoMental?: string;
+  comportamento?: string;
+  posturaMarcha?: string;
+  padraoRespiratorio?: string;
+  dorAparente?: string;
+  observacoes?: string;
+  nivelConsciencia?: string;
+  reacaoManipulacao?: string;
+}
+
+export interface EstadoCorporalHidratacao {
+  massaMuscular?: string;
+  hidratacao?: string;
+  turgorCutaneo?: string;
+  edemaPeriferico?: string;
+  pesoComparado?: string;
+  escore?: number | string;
+  peleElasticidade?: string;
+  membranas?: string;
+  tpc?: string;
+  turgorPele?: string;
+}
+
+export interface NeurologicoBasico {
+  nivelConsciencia?: string;
+  posturaMarchaCoord?: string;
+  propriocepcao?: string;
+  nistagmoTremores?: string;
+  respostaManipulacao?: string;
+  observacoes?: string;
+  reflexos?: string;
+  marcha?: string;
+}
+
+export interface DorEComportamento {
+  posturaCompativelDor?: string;
+  alteracaoApetiteInteracao?: string;
+  dorPalpacao?: string;
+  marchaProtecao?: string;
+  escalaDor?: number | string;
+  localizacao?: string;
+  tipoReacao?: string;
+  alteracaoComportamento?: string;
+}
+
+export interface ChecklistFinalizacao {
+  achadosRegistrados?: boolean;
+  queixaCorrelacionada?: boolean;
+  dorAvaliada?: boolean;
+  examesDefinidos?: boolean;
+  orientacoesRetorno?: boolean;
+  prioridadeProximoPasso?: string;
+  receitaEmitida?: boolean;
+  examesSolicitados?: boolean;
+  retronoMarcado?: boolean;
+  tutorOrientado?: boolean;
+  vacinasAtualizadas?: boolean;
+  observacoes?: string;
+}
+
 export interface ConsultaAtendimento {
   id: string;
   pacienteId: string;
@@ -2008,6 +2546,13 @@ export interface ConsultaAtendimento {
   valorDeslocamento?: number;
   valorTotal?: number;
   criadoEm: string;
+  // Campos de exame físico ampliado
+  queixaPrincipalId?: string;
+  observacaoAntesToque?: ObservacaoAntesToque;
+  estadoCorporalHidratacao?: EstadoCorporalHidratacao;
+  neurologicoBasico?: NeurologicoBasico;
+  dorComportamento?: DorEComportamento;
+  checklistFinalizacao?: ChecklistFinalizacao;
 }
 
 export const subscribeResponsaveis = (callback: (list: Responsavel[]) => void): (() => void) => {
@@ -2288,3 +2833,411 @@ export const registerClinic = async (
   return res.data as { success: boolean; tenantId: string; uid: string };
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FUNÇÕES AUXILIARES: Paciente / Responsável (leitura única)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getPaciente = async (id: string): Promise<Paciente | null> => {
+  if (!db) return null;
+  const snap = await getDoc(doc(pacientesCol(), id));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Paciente) : null;
+};
+
+export const getResponsavel = async (id: string): Promise<Responsavel | null> => {
+  if (!db || !id) return null;
+  const col = TENANT_COL('responsaveis');
+  const snap = await getDoc(doc(col, id));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Responsavel) : null;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MÓDULO FINANCEIRO: Contas a Receber / Contas a Pagar / Categorias
+// ─────────────────────────────────────────────────────────────────────────────
+
+const contasReceberCol = (tenantId: string = getActiveTenantId()) =>
+  TENANT_COL('contas_receber', tenantId);
+
+const contasPagarCol = (tenantId: string = getActiveTenantId()) =>
+  TENANT_COL('contas_pagar', tenantId);
+
+const categoriasFinanceirasCol = (tenantId: string = getActiveTenantId()) =>
+  TENANT_COL('categorias_financeiras', tenantId);
+
+export interface ContaReceber {
+  id: string;
+  descricao: string;
+  valor: number;
+  vencimento: string;
+  dataVencimento?: string;
+  status: 'pendente' | 'recebido' | 'pago' | 'atrasado' | 'cancelado';
+  categoriaId?: string;
+  categoriaNome?: string;
+  clienteId?: string;
+  clienteNome?: string;
+  atendimentoId?: string;
+  recebidoEm?: string;
+  recebidoPor?: string;
+  observacao?: string;
+  observacoes?: string;
+  criadoEm: string;
+  criadoPor?: string;
+  tenantId: string;
+}
+
+export interface ContaPagar {
+  id: string;
+  descricao: string;
+  valor: number;
+  vencimento: string;
+  dataVencimento?: string;
+  status: 'pendente' | 'recebido' | 'pago' | 'atrasado' | 'cancelado';
+  categoriaId?: string;
+  categoriaNome?: string;
+  fornecedor?: string;
+  pagoEm?: string;
+  pagoPor?: string;
+  observacao?: string;
+  observacoes?: string;
+  criadoEm: string;
+  criadoPor?: string;
+  tenantId: string;
+}
+
+export interface CategoriaFinanceira {
+  id: string;
+  nome: string;
+  tipo: 'receita' | 'despesa';
+  cor?: string;
+  tenantId: string;
+}
+
+export const subscribeContasReceber = (
+  callback: (list: ContaReceber[]) => void
+): (() => void) => {
+  const q = query(contasReceberCol(), orderBy('criadoEm', 'desc'));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ContaReceber)));
+  });
+};
+
+export const subscribeContasPagar = (
+  callback: (list: ContaPagar[]) => void
+): (() => void) => {
+  const q = query(contasPagarCol(), orderBy('criadoEm', 'desc'));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ContaPagar)));
+  });
+};
+
+export const subscribeCategoriasFinanceiras = (
+  callback: (list: CategoriaFinanceira[]) => void
+): (() => void) => {
+  return onSnapshot(categoriasFinanceirasCol(), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CategoriaFinanceira)));
+  });
+};
+
+export const saveContaReceber = async (
+  conta: Partial<ContaReceber> & { id?: string }
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = conta.id || `cr_${Date.now()}`;
+  const data: ContaReceber = {
+    descricao: conta.descricao || '',
+    valor: conta.valor || 0,
+    vencimento: conta.vencimento || conta.dataVencimento || new Date().toISOString().split('T')[0],
+    dataVencimento: conta.dataVencimento || conta.vencimento || new Date().toISOString().split('T')[0],
+    status: conta.status || 'pendente',
+    criadoEm: conta.criadoEm || new Date().toISOString(),
+    tenantId: getActiveTenantId(),
+    ...conta,
+    id: safeId,
+  };
+  await setDoc(doc(contasReceberCol(), safeId), data, { merge: true });
+  return safeId;
+};
+
+export const deleteContaReceber = async (id: string): Promise<void> => {
+  if (!db) return;
+  await deleteDoc(doc(contasReceberCol(), id));
+};
+
+export const quitarContaReceber = async (
+  conta: ContaReceber,
+  dataRecebimento: string,
+  recebidoPor: string
+): Promise<void> => {
+  if (!db) return;
+  await updateDoc(doc(contasReceberCol(), conta.id), {
+    status: 'recebido',
+    recebidoEm: dataRecebimento,
+    recebidoPor,
+  });
+};
+
+export const saveContaPagar = async (
+  conta: Partial<ContaPagar> & { id?: string }
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = conta.id || `cp_${Date.now()}`;
+  const data: ContaPagar = {
+    descricao: conta.descricao || '',
+    valor: conta.valor || 0,
+    vencimento: conta.vencimento || conta.dataVencimento || new Date().toISOString().split('T')[0],
+    dataVencimento: conta.dataVencimento || conta.vencimento || new Date().toISOString().split('T')[0],
+    status: conta.status || 'pendente',
+    criadoEm: conta.criadoEm || new Date().toISOString(),
+    tenantId: getActiveTenantId(),
+    ...conta,
+    id: safeId,
+  };
+  await setDoc(doc(contasPagarCol(), safeId), data, { merge: true });
+  return safeId;
+};
+
+export const deleteContaPagar = async (id: string): Promise<void> => {
+  if (!db) return;
+  await deleteDoc(doc(contasPagarCol(), id));
+};
+
+export const quitarContaPagar = async (
+  conta: ContaPagar,
+  dataPagamento: string,
+  pagoPor: string
+): Promise<void> => {
+  if (!db) return;
+  await updateDoc(doc(contasPagarCol(), conta.id), {
+    status: 'pago',
+    pagoEm: dataPagamento,
+    pagoPor,
+  });
+};
+
+export const saveCategoriaFinanceira = async (
+  cat: Partial<CategoriaFinanceira> & { id?: string }
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = cat.id || `catfin_${Date.now()}`;
+  const data: CategoriaFinanceira = {
+    nome: cat.nome || '',
+    tipo: cat.tipo || 'receita',
+    tenantId: getActiveTenantId(),
+    ...cat,
+    id: safeId,
+  };
+  await setDoc(doc(categoriasFinanceirasCol(), safeId), data, { merge: true });
+  return safeId;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CATÁLOGO DE EXAMES & REQUISIÇÕES
+// ─────────────────────────────────────────────────────────────────────────────
+
+const catalogoExamesCol = (tenantId: string = getActiveTenantId()) =>
+  TENANT_COL('catalogo_exames', tenantId);
+
+const requisicoesExamesCol = (tenantId: string = getActiveTenantId()) =>
+  TENANT_COL('requisicoes_exames', tenantId);
+
+export interface CatalogoExame {
+  id: string;
+  nome: string;
+  grupo?: string;        // e.g. "Hematologia", "Bioquímica", "Imagem"
+  categoria: string;    // categoria principal
+  descricao?: string;
+  referencia?: string;
+  preparo?: string;
+  tipoAmostra?: string;
+  laboratorioReferencia?: string;
+  ativo?: boolean;
+  tenantId: string;
+}
+
+export interface RequisicaoExame {
+  id: string;
+  pacienteId: string;
+  atendimentoId?: string;
+  tipo: 'requisicao_exames';
+  indicacaoClinica: string;
+  exames?: string[];    // ids dos exames solicitados
+  examesSelecionados?: any[];
+  status?: 'pendente' | 'realizado' | 'cancelado';
+  criadoEm: string;
+  criadoPor: string;
+  pdfUrl?: string;
+  tenantId?: string;
+}
+
+export const subscribeCatalogoExames = (
+  callback: (list: CatalogoExame[]) => void
+): (() => void) => {
+  const q = query(catalogoExamesCol(), orderBy('grupo'), orderBy('nome'));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as CatalogoExame)));
+  });
+};
+
+export const saveCatalogoExame = async (
+  exame: Partial<CatalogoExame> & { id?: string }
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = exame.id || `catex_${Date.now()}`;
+  const data: CatalogoExame = {
+    nome: exame.nome || '',
+    grupo: exame.grupo || exame.categoria || 'Geral',
+    categoria: exame.categoria || exame.grupo || 'Geral',
+    tenantId: getActiveTenantId(),
+    ...exame,
+    id: safeId,
+  };
+  await setDoc(doc(catalogoExamesCol(), safeId), data, { merge: true });
+  return safeId;
+};
+
+export const deleteCatalogoExame = async (id: string): Promise<void> => {
+  if (!db) return;
+  await deleteDoc(doc(catalogoExamesCol(), id));
+};
+
+export const saveRequisicaoExame = async (
+  req: Partial<RequisicaoExame> & { id?: string }
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = req.id || `reqex_${Date.now()}`;
+  const data = {
+    tipo: 'requisicao_exames' as const,
+    indicacaoClinica: req.indicacaoClinica || '',
+    criadoEm: req.criadoEm || new Date().toISOString(),
+    criadoPor: req.criadoPor || '',
+    tenantId: getActiveTenantId(),
+    ...req,
+    id: safeId,
+  };
+  await setDoc(doc(requisicoesExamesCol(), safeId), data, { merge: true });
+  return safeId;
+};
+
+export const subscribeRequisicoesExames = (
+  pacienteId: string,
+  callback: (list: RequisicaoExame[]) => void
+): (() => void) => {
+  if (!db || !pacienteId) { callback([]); return () => {}; }
+  const q = query(requisicoesExamesCol(), where('pacienteId', '==', pacienteId), orderBy('criadoEm', 'desc'));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as RequisicaoExame)));
+  });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EVOLUÇÕES CLÍNICAS (Timeline do Paciente)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const evolucoesCol = (pacienteId: string, tenantId: string = getActiveTenantId()) =>
+  collection(db!, 'clinicas', tenantId, 'pacientes', pacienteId, 'evolucoes');
+
+export interface PlanoDiagnosticoItem {
+  id?: string;
+  exameProcedimento: string;
+  justificativa: string;
+}
+
+export interface CondutaTratamentoItem {
+  id?: string;
+  medicacaoProcedimento: string;
+  doseViaFreq: string;
+  duracao: string;
+}
+
+export interface EvolucaoCaso {
+  id: string;
+  pacienteId: string;
+  tutorId?: string;
+  atendimentoId?: string;
+  casoId?: string;
+  consultaReferenciaId?: string;
+  data: string;
+  texto: string;
+  planoDiagnostico?: PlanoDiagnosticoItem[];
+  tratamentosInstituidos?: CondutaTratamentoItem[];
+  condutaAjustada?: string;
+  registradoPor?: string;
+  autorNome?: string;
+  autorId?: string;
+  examesReferenciados?: string[];
+  criadoEm?: string;
+  tenantId: string;
+}
+
+export const subscribeEvolucoesPaciente = (
+  pacienteId: string,
+  callback: (list: EvolucaoCaso[]) => void
+): (() => void) => {
+  if (!db || !pacienteId) { callback([]); return () => {}; }
+  const q = query(evolucoesCol(pacienteId), orderBy('data', 'desc'));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as EvolucaoCaso)));
+  });
+};
+
+export const saveEvolucaoCaso = async (
+  pacienteIdOrData: string | (Partial<EvolucaoCaso> & { id?: string }),
+  evolucaoData?: Partial<EvolucaoCaso> & { id?: string }
+): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  let pacienteId: string;
+  let evolucao: Partial<EvolucaoCaso> & { id?: string };
+  if (typeof pacienteIdOrData === 'string') {
+    pacienteId = pacienteIdOrData;
+    evolucao = evolucaoData || {};
+  } else {
+    evolucao = pacienteIdOrData;
+    pacienteId = evolucao.pacienteId || '';
+  }
+  const safeId = evolucao.id || `ev_${Date.now()}`;
+  const data: EvolucaoCaso = {
+    pacienteId,
+    data: evolucao.data || new Date().toISOString(),
+    texto: evolucao.texto || '',
+    tenantId: getActiveTenantId(),
+    ...evolucao,
+    id: safeId,
+  };
+  await setDoc(doc(evolucoesCol(pacienteId), safeId), data, { merge: true });
+  return safeId;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROTEIROS DE ANAMNESE
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Re-export do tipo do seed (evita duplicação)
+export interface RoteiroAnamnese {
+  id: string;
+  ordem: number;
+  nome: string;
+  semiologia?: string;
+  secoes: { titulo: string; campos: any[] }[];
+  naoEsqueca: string[];
+  objetivo: string;
+  tenantId?: string;
+}
+
+const roteirosAnamneseCol = (tenantId: string = getActiveTenantId()) =>
+  TENANT_COL('roteiros_anamnese', tenantId);
+
+export const subscribeRoteirosAnamnese = (
+  callback: (list: any[]) => void
+): (() => void) => {
+  const q = query(roteirosAnamneseCol(), orderBy('ordem'));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+};
+
+export const saveRoteiroAnamnese = async (roteiro: any): Promise<string> => {
+  if (!db) throw new Error('DB not initialized');
+  const safeId = roteiro.id || `rot_${Date.now()}`;
+  await setDoc(doc(roteirosAnamneseCol(), safeId), { ...roteiro, id: safeId }, { merge: true });
+  return safeId;
+};

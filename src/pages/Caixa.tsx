@@ -34,6 +34,11 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
   const [lastVendaId, setLastVendaId] = useState<string | null>(null);
   const [lastVendaData, setLastVendaData] = useState<any>(null);
 
+  // Payment Condition (Integral vs Parcial/A Prazo)
+  const [statusPagamento, setStatusPagamento] = useState<'pago_integral' | 'parcial_a_prazo'>('pago_integral');
+  const [valorPagoAgoraInput, setValorPagoAgoraInput] = useState('');
+  const [dataVencimentoRestante, setDataVencimentoRestante] = useState(new Date().toISOString().split('T')[0]);
+
   // Management State (Modal/Panel for previous sales)
   const [selectedMov, setSelectedMov] = useState<MovimentoCaixa | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -298,6 +303,12 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
     if (metodoPagamento.includes('Cartão') && !maquininha) return alert('Por favor, selecione a maquininha utilizada (Stone ou Getnet).');
     if (metodoPagamento.includes('Cartão') && !bandeiraCartao) return alert('Por favor, selecione a bandeira do cartão.');
     
+    const numPagoAgora = statusPagamento === 'parcial_a_prazo' ? (parseFloat(valorPagoAgoraInput) || 0) : totalVenda;
+    if (numPagoAgora < 0) return alert('O valor pago agora não pode ser negativo.');
+    if (numPagoAgora > totalVenda) return alert('O valor pago agora não pode ser maior que o total da venda.');
+
+    const numPendente = totalVenda - numPagoAgora;
+
     try {
       const vData = { cart: [...cart], clienteNome, animalNome, total: totalVenda };
       const result = await registrarVenda(
@@ -306,8 +317,15 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
         totalVenda, 
         operadorNome, 
         metodoPagamento,
-        { nome: clienteNome, animal: animalNome },
-        bandeiraCartao ? `${maquininha} (${bandeiraCartao})` : (maquininha || 'N/A')
+        { nome: clienteNome, animal: animalNome, clienteId: selectedCustomer?.id },
+        bandeiraCartao ? `${maquininha} (${bandeiraCartao})` : (maquininha || 'N/A'),
+        {
+          statusPagamento,
+          valorPagoAgora: numPagoAgora,
+          valorPendente: numPendente,
+          dataVencimentoRestante: dataVencimentoRestante || selectedDate,
+          clienteId: selectedCustomer?.id
+        }
       );
       setLastVendaId(result?.vendaId || `venda_${Date.now()}`);
       setLastVendaData(vData);
@@ -320,6 +338,8 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
       setSelectedCustomer(null);
       setObservacoes('');
       setNfeStatus(null);
+      setStatusPagamento('pago_integral');
+      setValorPagoAgoraInput('');
     } catch (err) {
       console.error(err);
       alert('Erro ao registrar venda.');
@@ -441,7 +461,91 @@ const Caixa = ({ userProfile }: { userProfile: AppUser | null }) => {
                 {caixa.fechamento?.observacoes && (
                   <p className="italic text-slate-500 mt-2">"{caixa.fechamento.observacoes}"</p>
                 )}
-             </div>
+            </div>
+
+            {/* Condição de Pagamento (Pago Integralmente vs Parcial ou A Prazo) */}
+            <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-600 uppercase tracking-wider block">
+                Condição de Pagamento
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusPagamento('pago_integral');
+                    setValorPagoAgoraInput('');
+                  }}
+                  className={`p-3 rounded-xl border-2 font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+                    statusPagamento === 'pago_integral'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  Pago Integralmente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusPagamento('parcial_a_prazo');
+                    if (!valorPagoAgoraInput) setValorPagoAgoraInput('0');
+                  }}
+                  className={`p-3 rounded-xl border-2 font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+                    statusPagamento === 'parcial_a_prazo'
+                      ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-sm'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <Clock className="w-4 h-4 text-amber-500" />
+                  Parcial ou A Prazo
+                </button>
+              </div>
+
+              {statusPagamento === 'parcial_a_prazo' && (
+                <div className="pt-3 border-t border-slate-200/80 space-y-4 animate-in slide-in-from-top-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">
+                        Valor Pago Agora (R$)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={totalVenda}
+                        value={valorPagoAgoraInput}
+                        onChange={(e) => setValorPagoAgoraInput(e.target.value)}
+                        placeholder="0,00"
+                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">
+                        Data de Vencimento do Restante
+                      </label>
+                      <input
+                        type="date"
+                        value={dataVencimentoRestante}
+                        onChange={(e) => setDataVencimentoRestante(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-100/60 border border-amber-200 p-3 rounded-xl flex justify-between items-center text-xs">
+                    <div>
+                      <span className="text-amber-800 font-medium">Restante A Prazo: </span>
+                      <span className="text-amber-900 font-bold">
+                        R$ {Math.max(0, totalVenda - (parseFloat(valorPagoAgoraInput) || 0)).toFixed(2)}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-amber-700 font-semibold bg-amber-200/60 px-2.5 py-1 rounded-full">
+                      Cria Conta a Receber automaticamente
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col gap-4 pt-4 border-t border-slate-50">

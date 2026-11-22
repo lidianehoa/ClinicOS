@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
   Plus, 
@@ -23,7 +23,15 @@ import {
   AlertCircle,
   Bot,
   Sparkles,
-  MessageCircle
+  MessageCircle,
+  UploadCloud,
+  Loader2,
+  Home,
+  Truck,
+  CheckCircle2,
+  Info,
+  FileText,
+  ClipboardList
 } from 'lucide-react';
 import { 
   saveUserProfile, type AppUser, 
@@ -31,9 +39,16 @@ import {
   getIntegrationsConfig, saveIntegrationsConfig, type IntegrationsConfig,
   getClinicConfig, saveClinicConfig, type ClinicConfig,
   subscribeServices, saveService, deleteService, type ClinicService,
-  subscribeStaff, saveStaff, deleteStaff, type StaffMember
+  subscribeStaff, saveStaff, deleteStaff, type StaffMember,
+  getHomeCareConfig, saveHomeCareConfig, type HomeCareConfig,
+  APP_ID, getActiveTenantId
 } from '../services/dataService';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage } from '../services/firebase';
 import { useTranslation } from 'react-i18next';
+import { IAProtocolos } from '../components/IAProtocolos';
+import { CatalogoExamesAdmin } from '../components/CatalogoExamesAdmin';
+import { RoteirosAnamneseAdmin } from '../components/RoteirosAnamneseAdmin';
 
 const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
   const { t } = useTranslation(['settings', 'common']);
@@ -44,6 +59,11 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
   // Perfil State
   const [nome, setNome] = useState(userProfile?.nome || '');
   const [crmv, setCrmv] = useState(userProfile?.crmv || '');
+  const [cpf, setCpf] = useState(userProfile?.cpf || '');
+  const [registroMapa, setRegistroMapa] = useState(userProfile?.registroMapa || '');
+  const [cpfPrescritorModo, setCpfPrescritorModo] = useState<'ocultar' | 'mascarado' | 'completo'>(
+    userProfile?.cpfPrescritorModo || 'ocultar'
+  );
   const [loadingProfile, setLoadingProfile] = useState(false);
 
   const isAdmin = userProfile?.role === 'gerente' || userProfile?.role === 'administrador';
@@ -81,6 +101,10 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
   });
   const [isSavingClinic, setIsSavingClinic] = useState(false);
   const [msgClinic, setMsgClinic] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [logoUploadProgress, setLogoUploadProgress] = useState<number | null>(null);
+  const [isDragOverLogo, setIsDragOverLogo] = useState(false);
 
   // Services State
   const [services, setServices] = useState<ClinicService[]>([]);
@@ -92,10 +116,25 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
 
+  // HomeCare State
+  const [homeCareData, setHomeCareData] = useState<HomeCareConfig>({
+    ativo: false,
+    enderecoBase: '',
+    modeloPrecificacao: 'por_km',
+    valorPorKm: 0,
+    taxaMinima: 0,
+    faixas: []
+  });
+  const [isSavingHomeCare, setIsSavingHomeCare] = useState(false);
+  const [msgHomeCare, setMsgHomeCare] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
   useEffect(() => {
     if (userProfile) {
       setNome(userProfile.nome);
       setCrmv(userProfile.crmv || '');
+      setCpf(userProfile.cpf || '');
+      setRegistroMapa(userProfile.registroMapa || '');
+      setCpfPrescritorModo(userProfile.cpfPrescritorModo || 'ocultar');
     }
     
     // Load Fiscal Data
@@ -107,7 +146,20 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
         if (data) setIntegrationsData(data);
       });
       getClinicConfig().then(data => {
-        if (data) setClinicData(data);
+        if (data) {
+          setClinicData(data);
+          if (data.logoUrl) {
+            localStorage.setItem('clinicos_clinic_logo', data.logoUrl);
+          }
+        } else {
+          const cachedLogo = localStorage.getItem('clinicos_clinic_logo');
+          if (cachedLogo) {
+            setClinicData(prev => ({ ...prev, logoUrl: cachedLogo }));
+          }
+        }
+      });
+      getHomeCareConfig().then(data => {
+        if (data) setHomeCareData(data);
       });
     }
   }, [userProfile, isAdmin]);
@@ -130,6 +182,7 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
       title: 'Atendimento',
       items: [
         { id: 'tipos-atendimento', label: 'Tipos de Atendimento', icon: Stethoscope },
+        { id: 'roteiros-anamnese', label: 'Roteiros de Anamnese', icon: ClipboardList },
       ]
     },
     {
@@ -139,6 +192,8 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
         { id: 'utilizadores', label: 'Utilizadores do Sistema', icon: Users },
         ...(isAdmin ? [{ id: 'fiscal', label: 'Fiscal / NFe', icon: Receipt }] : []),
         ...(isAdmin ? [{ id: 'integrations', label: 'Integrações', icon: Sparkles }] : []),
+        ...(isAdmin ? [{ id: 'ia-protocolos', label: 'IA e Protocolos', icon: Bot }] : []),
+        ...(isAdmin ? [{ id: 'catalogo-exames', label: 'Catálogo de Exames', icon: FileText }] : []),
       ]
     }
   ];
@@ -148,11 +203,19 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
     if (!userProfile) return;
     setLoadingProfile(true);
     try {
-      await saveUserProfile({
+      const profileUpdates: any = {
         ...userProfile,
         nome,
-        crmv: userProfile.role === 'veterinario' ? crmv : undefined
-      });
+        cpf: cpf ? cpf.trim() : null,
+        registroMapa: registroMapa ? registroMapa.trim() : '',
+        cpfPrescritorModo: cpfPrescritorModo || 'ocultar',
+      };
+      if (userProfile.role === 'veterinario') {
+        profileUpdates.crmv = crmv;
+      } else {
+        profileUpdates.crmv = null;
+      }
+      await saveUserProfile(profileUpdates);
       setIsEditing(false);
     } catch (err) {
       console.error('Erro ao atualizar perfil:', err);
@@ -163,13 +226,87 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
 
   // ── Render Helpers ─────────────────────────────────────────────────────────
 
+  const handleLogoFile = (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setMsgClinic({ text: 'Por favor, selecione um arquivo de imagem válido (PNG, JPG, SVG ou WEBP).', type: 'error' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMsgClinic({ text: 'A imagem selecionada é muito grande. Escolha um arquivo de até 5MB.', type: 'error' });
+      return;
+    }
+
+    setMsgClinic(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      // Visualização imediata em base64
+      setClinicData(prev => ({ ...prev, logoUrl: result }));
+
+      // Tenta upload para o Firebase Storage se disponível
+      if (storage) {
+        setIsUploadingLogo(true);
+        setLogoUploadProgress(15);
+        try {
+          const ext = file.name.split('.').pop() || 'png';
+          const tenantPath = getActiveTenantId() ? `clinicas/${getActiveTenantId()}/logos` : `artifacts/${APP_ID}/logos`;
+          const fileRef = storageRef(storage, `${tenantPath}/clinic_logo_${Date.now()}.${ext}`);
+          const uploadTask = uploadBytesResumable(fileRef, file);
+
+          uploadTask.on(
+            'state_changed',
+            (snap) => {
+              const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+              setLogoUploadProgress(pct);
+            },
+            (error) => {
+              console.warn('Upload no Storage falhou, mantendo imagem local segura:', error);
+              setIsUploadingLogo(false);
+              setLogoUploadProgress(null);
+            },
+            async () => {
+              try {
+                const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                setClinicData(prev => ({ ...prev, logoUrl: downloadUrl }));
+              } catch (err) {
+                console.warn('Erro ao obter downloadURL:', err);
+              } finally {
+                setIsUploadingLogo(false);
+                setLogoUploadProgress(null);
+              }
+            }
+          );
+        } catch (err) {
+          console.warn('Exceção no upload Firebase Storage:', err);
+          setIsUploadingLogo(false);
+          setLogoUploadProgress(null);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveClinic = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingClinic(true);
     setMsgClinic(null);
     try {
+      if (clinicData.logoUrl && clinicData.logoUrl.startsWith('data:image/') && clinicData.logoUrl.length > 1000000) {
+        setMsgClinic({ text: 'A imagem falhou ao fazer upload no servidor (muito grande para backup local). Escolha uma imagem menor ou aguarde o upload.', type: 'error' });
+        setIsSavingClinic(false);
+        return;
+      }
       await saveClinicConfig(clinicData);
-      setMsgClinic({ text: 'Dados da clínica salvos com sucesso!', type: 'success' });
+      if (clinicData.logoUrl) {
+        localStorage.setItem('clinicos_clinic_logo', clinicData.logoUrl);
+      } else {
+        localStorage.removeItem('clinicos_clinic_logo');
+      }
+      if (clinicData.name) {
+        localStorage.setItem('clinicos_clinic_name', clinicData.name);
+      }
+      setMsgClinic({ text: 'Dados e logotipo da clínica salvos com sucesso!', type: 'success' });
     } catch (err) {
       console.error(err);
       setMsgClinic({ text: 'Erro ao salvar dados da clínica.', type: 'error' });
@@ -318,7 +455,11 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-slate-400 uppercase">Registro Profissional</label>
-                    <input type="text" value={editingStaff.professionalId} onChange={e => setEditingStaff({...editingStaff, professionalId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm" placeholder="Ex: CRM-SP 12345" />
+                    <input type="text" value={editingStaff.professionalId} onChange={e => setEditingStaff({...editingStaff, professionalId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm" placeholder="Ex: CRMV-SP 12345" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase">CPF (Assinatura ICP-Brasil)</label>
+                    <input type="text" value={editingStaff.cpf || ''} onChange={e => setEditingStaff({...editingStaff, cpf: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm font-mono" placeholder="000.000.000-00" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-slate-400 uppercase">Email*</label>
@@ -359,6 +500,202 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
      </div>
   );
 
+  const handleSaveHomeCare = async () => {
+    setIsSavingHomeCare(true);
+    setMsgHomeCare(null);
+    try {
+      await saveHomeCareConfig(homeCareData);
+      setMsgHomeCare({ text: 'Configuração de Atendimento Domiciliar salva com sucesso!', type: 'success' });
+      setTimeout(() => setMsgHomeCare(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setMsgHomeCare({ text: 'Erro ao salvar configuração.', type: 'error' });
+    } finally {
+      setIsSavingHomeCare(false);
+    }
+  };
+
+  const renderDomiciliar = () => {
+    const addFaixa = () =>
+      setHomeCareData(prev => ({ ...prev, faixas: [...(prev.faixas || []), { ateKm: 0, valor: 0 }] }));
+    const removeFaixa = (i: number) =>
+      setHomeCareData(prev => ({ ...prev, faixas: (prev.faixas || []).filter((_, idx) => idx !== i) }));
+    const updateFaixa = (i: number, field: 'ateKm' | 'valor', val: number) =>
+      setHomeCareData(prev => {
+        const f = [...(prev.faixas || [])];
+        f[i] = { ...f[i], [field]: val };
+        return { ...prev, faixas: f };
+      });
+
+    return (
+      <div className="space-y-6 animate-fade-in pb-8">
+        {/* Toggle Principal */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center">
+                <Truck className="w-6 h-6 text-teal-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-800">Atendimento Domiciliar</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Habilita o registro de visitas domiciliares, deslocamento, medicamentos e checklist PGRSS nas consultas.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHomeCareData(prev => ({ ...prev, ativo: !prev.ativo }))}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${homeCareData.ativo ? 'bg-teal-500' : 'bg-slate-200'}`}
+            >
+              <span className={`pointer-events-none inline-block h-6 w-6 rounded-full bg-white shadow-md transform transition-transform duration-200 ${homeCareData.ativo ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+
+          {homeCareData.ativo && (
+            <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-teal-500 shrink-0" />
+              <span className="text-xs font-semibold text-teal-700">Módulo ativo — os botões "Medicamentos Aplicados" e "Checklist de Resíduos" aparecerão na tela de Consulta.</span>
+            </div>
+          )}
+        </div>
+
+        {/* Configurações de Deslocamento */}
+        {homeCareData.ativo && (
+          <>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-teal-600" />
+                Endereço-Base (Ponto de Partida)
+              </h4>
+              <p className="text-xs text-slate-500">Endereço da clínica ou da residência do profissional volante. Usado como referência para o cálculo de distância.</p>
+              <input
+                type="text"
+                value={homeCareData.enderecoBase}
+                onChange={e => setHomeCareData(prev => ({ ...prev, enderecoBase: e.target.value }))}
+                placeholder="Ex: Rua das Flores, 123, Bairro, Cidade - UF"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-teal-500 outline-none"
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+              <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-teal-600" />
+                Modelo de Precificação do Deslocamento
+              </h4>
+
+              <div className="flex gap-3">
+                {([
+                  { id: 'por_km', label: 'Valor por km', desc: 'Taxa única × distância percorrida' },
+                  { id: 'faixas', label: 'Faixas de distância', desc: 'Preço fixo por intervalo de km' }
+                ] as const).map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setHomeCareData(prev => ({ ...prev, modeloPrecificacao: opt.id }))}
+                    className={`flex-1 p-4 rounded-xl border-2 text-left transition-all ${homeCareData.modeloPrecificacao === opt.id ? 'border-teal-500 bg-teal-50' : 'border-slate-200 hover:border-slate-300'}`}
+                  >
+                    <span className={`text-sm font-bold block ${homeCareData.modeloPrecificacao === opt.id ? 'text-teal-700' : 'text-slate-700'}`}>{opt.label}</span>
+                    <span className="text-xs text-slate-500 mt-0.5 block">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+
+              {homeCareData.modeloPrecificacao === 'por_km' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase">Valor por km (R$)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={homeCareData.valorPorKm ?? 0}
+                      onChange={e => setHomeCareData(prev => ({ ...prev, valorPorKm: parseFloat(e.target.value) || 0 }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase">Taxa Mínima (R$)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={homeCareData.taxaMinima ?? 0}
+                      onChange={e => setHomeCareData(prev => ({ ...prev, taxaMinima: parseFloat(e.target.value) || 0 }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {homeCareData.modeloPrecificacao === 'faixas' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Faixas Configuradas</span>
+                    <button
+                      type="button" onClick={addFaixa}
+                      className="flex items-center gap-1.5 text-xs font-bold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Adicionar Faixa
+                    </button>
+                  </div>
+
+                  {(homeCareData.faixas || []).length === 0 && (
+                    <div className="text-center py-6 text-sm text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      Nenhuma faixa cadastrada. Clique em "Adicionar Faixa".
+                    </div>
+                  )}
+
+                  {(homeCareData.faixas || []).map((f, i) => (
+                    <div key={i} className="flex items-end gap-3 bg-slate-50 rounded-xl p-3 border border-slate-200">
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">Até (km)</label>
+                        <input
+                          type="number" min="0" value={f.ateKm}
+                          onChange={e => updateFaixa(i, 'ateKm', parseFloat(e.target.value) || 0)}
+                          className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm"
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">Valor (R$)</label>
+                        <input
+                          type="number" step="0.01" min="0" value={f.valor}
+                          onChange={e => updateFaixa(i, 'valor', parseFloat(e.target.value) || 0)}
+                          className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm"
+                        />
+                      </div>
+                      <button type="button" onClick={() => removeFaixa(i)} className="mb-0.5 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
+                <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Distância manual:</span> Na tela de Consulta, o veterinário informa os km percorridos. O sistema calcula o valor automaticamente com base na regra acima.
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {msgHomeCare && (
+          <div className={`p-4 rounded-xl flex items-center gap-3 text-sm animate-in fade-in duration-300 ${msgHomeCare.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+            {msgHomeCare.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            {msgHomeCare.text}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            type="button" onClick={handleSaveHomeCare} disabled={isSavingHomeCare}
+            className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-3 rounded-xl shadow-sm shadow-emerald-500/20 flex items-center gap-2 transition-all disabled:opacity-50"
+          >
+            <Save className="w-5 h-5" />
+            {isSavingHomeCare ? 'Salvando...' : 'Salvar Configuração'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderEmpresa = () => (
     <div className="space-y-6 animate-fade-in pb-20">
       <h2 className="text-2xl font-bold text-slate-800">{t('settings:company_data', 'Dados da Empresa')}</h2>
@@ -371,6 +708,7 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
           { id: 'logomarca', label: 'Logomarca', icon: ImageIcon },
           { id: 'parametros', label: 'Parâmetros', icon: Sliders },
           { id: 'responsaveis', label: 'Responsáveis', icon: UserCheck },
+          { id: 'domiciliar', label: 'Domiciliar', icon: Home },
         ].map(tab => (
           <button
             key={tab.id}
@@ -390,6 +728,8 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
 
       {activeTab === 'responsaveis' ? (
         renderResponsaveis()
+      ) : activeTab === 'domiciliar' ? (
+        renderDomiciliar()
       ) : activeTab === 'parametros' ? (
         <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm">
           {renderPlaceholder('Parâmetros')}
@@ -476,20 +816,142 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
 
         {activeTab === 'logomarca' && (
           <div className="space-y-6">
-             <div className="flex items-center gap-6">
-                <div className="w-32 h-32 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
-                   {clinicData.logoUrl ? (
-                     <img src={clinicData.logoUrl} alt="Logo da Clínica" className="w-full h-full object-contain" />
-                   ) : (
-                     <ImageIcon className="w-10 h-10 text-slate-300" />
-                   )}
+            <div className="bg-slate-50/50 rounded-2xl border border-slate-200/80 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Logotipo da Clínica</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Faça o upload do logotipo da sua clínica para personalizar a identidade visual do sistema e dos documentos emitidos.
+                  </p>
                 </div>
-                <div className="space-y-2 flex-1">
-                   <label className="text-[11px] font-bold text-slate-400 uppercase">URL da Imagem</label>
-                   <input type="url" value={clinicData.logoUrl || ''} onChange={e => setClinicData({...clinicData, logoUrl: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm" placeholder="https://exemplo.com/logo.png" />
-                   <p className="text-[10px] text-slate-400 mt-1">Cole a URL direta de uma imagem para usá-la como logotipo no sistema.</p>
+              </div>
+
+              {/* Input file invisível */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleLogoFile(e.target.files[0]);
+                  }
+                }}
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                {/* Visualizador / Moldura do Logotipo */}
+                <div className="md:col-span-5 flex flex-col items-center justify-center p-6 bg-white rounded-2xl border border-slate-200 shadow-sm relative min-h-[220px]">
+                  {clinicData.logoUrl ? (
+                    <div className="flex flex-col items-center justify-center w-full">
+                      <div className="w-48 h-36 rounded-2xl border-2 border-[#00c9b7] bg-white p-3 flex items-center justify-center overflow-hidden shadow-sm">
+                        <img
+                          src={clinicData.logoUrl}
+                          alt="Logotipo da Clínica"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+                      <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
+                        <CheckCircle className="w-4 h-4" /> Logotipo ativo no sistema
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center p-4">
+                      <div className="w-20 h-20 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 mb-3">
+                        <ImageIcon className="w-10 h-10 text-slate-300" />
+                      </div>
+                      <p className="text-xs font-semibold text-slate-600">Nenhum logotipo enviado</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Usando identidade padrão da clínica.</p>
+                    </div>
+                  )}
+
+                  {isUploadingLogo && (
+                    <div className="absolute inset-0 bg-white/90 backdrop-blur-[2px] rounded-2xl flex flex-col items-center justify-center p-4 z-10 animate-in fade-in duration-200">
+                      <Loader2 className="w-8 h-8 text-teal-600 animate-spin mb-2" />
+                      <p className="text-xs font-bold text-slate-700">Enviando imagem...</p>
+                      {logoUploadProgress !== null && (
+                        <div className="w-32 bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                          <div
+                            className="bg-teal-500 h-1.5 rounded-full transition-all duration-300"
+                            style={{ width: `${logoUploadProgress}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-             </div>
+
+                {/* Zona de Drop & Botões de Ação */}
+                <div className="md:col-span-7 space-y-4">
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragOverLogo(true);
+                    }}
+                    onDragLeave={() => setIsDragOverLogo(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDragOverLogo(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        handleLogoFile(e.dataTransfer.files[0]);
+                      }
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${
+                      isDragOverLogo
+                        ? 'border-[#00c9b7] bg-teal-50/50 scale-[1.01]'
+                        : 'border-slate-300 hover:border-[#00c9b7] hover:bg-teal-50/20 bg-white'
+                    }`}
+                  >
+                    <div className="w-12 h-12 rounded-full bg-teal-50 text-[#00c9b7] flex items-center justify-center shadow-sm">
+                      <UploadCloud className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">
+                        {clinicData.logoUrl ? 'Clique ou arraste para substituir o logotipo' : 'Clique ou arraste o logotipo aqui'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Formatos aceitos: PNG, JPG, SVG ou WEBP (máx. 5MB)
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-1 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      Selecionar do Computador
+                    </button>
+                  </div>
+
+                  {clinicData.logoUrl && (
+                    <div className="flex items-center justify-between pt-1 px-1">
+                      <span className="text-[11px] text-slate-400">
+                        Deseja remover o logotipo personalizado?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setClinicData({ ...clinicData, logoUrl: '' })}
+                        className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline flex items-center gap-1 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remover logotipo
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="bg-amber-50/80 border border-amber-200/70 rounded-xl p-3 text-[11px] text-amber-800 flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Recomendação profissional:</span> Para impressões nítidas em prontuários e termos, prefira imagens de alta resolução com fundo transparente (formato <strong>PNG</strong> ou <strong>SVG</strong>).
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -712,15 +1174,62 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
               />
             </div>
             {userProfile?.role === 'veterinario' && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400 uppercase">Registro Profissional</label>
-                <input
-                  type="text"
-                  value={crmv}
-                  onChange={e => setCrmv(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Registro Profissional (CRMV)</label>
+                  <input
+                    type="text"
+                    value={crmv}
+                    onChange={e => setCrmv(e.target.value)}
+                    placeholder="Ex: CRMV-SP 12345"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase">
+                    CPF do Titular (para Assinatura Digital ICP-Brasil)
+                  </label>
+                  <input
+                    type="text"
+                    value={cpf}
+                    onChange={e => setCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-primary/20 font-mono"
+                  />
+                  <span className="text-[10px] text-slate-400 block">
+                    * Necessário para validação da titularidade do certificado digital e-CPF (ex.: SafeID, BirdID, VIDaaS).
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase">
+                    Registro MAPA / SIPEAGRO
+                  </label>
+                  <input
+                    type="text"
+                    value={registroMapa}
+                    onChange={e => setRegistroMapa(e.target.value)}
+                    placeholder="Ex: SP-001234"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-primary/20"
+                  />
+                  <span className="text-[10px] text-slate-400 block">
+                    * Obrigatório para emissão de receituário de controle especial e manipulados controlados.
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase">
+                    Exibição do CPF no Receituário
+                  </label>
+                  <select
+                    value={cpfPrescritorModo}
+                    onChange={e => setCpfPrescritorModo(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="ocultar">Ocultar CPF (Padrão)</option>
+                    <option value="mascarado">Mascarado (ex: 700.***.***-15)</option>
+                    <option value="completo">Completo</option>
+                  </select>
+                </div>
+              </>
             )}
             <button type="submit" disabled={loadingProfile} className="w-full bg-primary text-white font-bold py-3.5 rounded-xl mt-4 flex items-center justify-center gap-2">
               <Save className="w-4 h-4" />
@@ -740,6 +1249,12 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase">E-mail:</p>
                 <p className="text-sm text-slate-700">{userProfile?.email}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">CPF (Assinatura ICP-Brasil):</p>
+                <p className="text-sm text-slate-700 font-mono">
+                  {userProfile?.cpf ? `***.${userProfile.cpf.replace(/\D/g, '').substring(3, 6)}.${userProfile.cpf.replace(/\D/g, '').substring(6, 9)}-**` : 'Não configurado'}
+                </p>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase">Celular:</p>
@@ -1162,7 +1677,10 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
           {activeSection === 'fiscal' && renderNFe()}
           {activeSection === 'integrations' && renderIntegrations()}
           {activeSection === 'utilizadores' && renderResponsaveis()}
-          {activeSection !== 'empresa' && activeSection !== 'tipos-atendimento' && activeSection !== 'meu-perfil' && activeSection !== 'fiscal' && activeSection !== 'integrations' && activeSection !== 'utilizadores' && renderPlaceholder(
+          {activeSection === 'ia-protocolos' && <IAProtocolos userProfile={userProfile} />}
+          {activeSection === 'catalogo-exames' && <CatalogoExamesAdmin userProfile={userProfile} />}
+          {activeSection === 'roteiros-anamnese' && <RoteirosAnamneseAdmin userProfile={userProfile} />}
+          {activeSection !== 'empresa' && activeSection !== 'tipos-atendimento' && activeSection !== 'meu-perfil' && activeSection !== 'fiscal' && activeSection !== 'integrations' && activeSection !== 'utilizadores' && activeSection !== 'ia-protocolos' && activeSection !== 'catalogo-exames' && activeSection !== 'roteiros-anamnese' && renderPlaceholder(
             menuGroups.flatMap(g => g.items).find(i => i.id === activeSection)?.label || 'Configuração'
           )}
         </div>

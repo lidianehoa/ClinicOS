@@ -35,7 +35,10 @@ export const db = initializeFirestore(app, {
   }),
 });
 
+import { getFunctions, httpsCallable } from 'firebase/functions';
+
 export const storage = getStorage(app);
+export const functions = getFunctions(app, 'us-central1');
 
 // Auth Methods
 export {
@@ -43,5 +46,7 @@ export {
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  updatePassword
+  updatePassword,
+  httpsCallable
 };
+

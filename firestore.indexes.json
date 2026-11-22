@@ -1,0 +1,33 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "analises",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "casoId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "numero",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "receitas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "pacienteId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "criadoEm",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { User, MessageCircle, Send, Search } from 'lucide-react';
+import { User, MessageCircle, Send, Search, FileText } from 'lucide-react';
 import {
   searchCustomers,
   subscribeInteractions,
@@ -14,6 +14,9 @@ import {
   type MedicalRecord
 } from '../services/dataService';
 import ProntuarioModal from '../components/ProntuarioModal';
+import PatientTimeline from '../components/PatientTimeline';
+import GerarDocumentoModal from '../components/GerarDocumentoModal';
+import AuditoriaModal from '../components/AuditoriaModal';
 import { useTranslation } from 'react-i18next';
 
 interface CRMProps {
@@ -42,7 +45,11 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
   const bottomRef = useRef<HTMLDivElement>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
-  const [crmTab, setCrmTab] = useState<'anotacoes'|'prontuarios'>('anotacoes');
+  const [crmTab, setCrmTab] = useState<'anotacoes' | 'prontuarios'>('anotacoes');
+
+  // Modais Domiciliar
+  const [isGerarDocumentoModalOpen, setIsGerarDocumentoModalOpen] = useState(false);
+  const [isAuditoriaModalOpen, setIsAuditoriaModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
 
   useEffect(() => {
@@ -345,23 +352,28 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
 
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-slate-700">{t('crm:records_history', 'Histórico de Prontuários')}</h3>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setIsGerarDocumentoModalOpen(true)}
+                        className="px-3 py-1.5 bg-indigo-50 text-indigo-600 font-bold text-[10px] rounded-lg hover:bg-indigo-100 flex items-center gap-1"
+                      >
+                        <FileText className="w-3 h-3" /> Termo / Documento
+                      </button>
+                      <button 
+                        onClick={() => setIsAuditoriaModalOpen(true)}
+                        className="px-3 py-1.5 bg-amber-50 text-amber-600 font-bold text-[10px] rounded-lg hover:bg-amber-100 flex items-center gap-1"
+                      >
+                        <FileText className="w-3 h-3" /> Auditoria / Maleta
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {records.map(rec => (
-                      <div key={rec.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                        <div>
-                           <p className="text-sm font-bold text-slate-800">{rec.date.split('-').reverse().join('/')} - {rec.diagnosis || t('crm:no_diagnosis', 'Sem diagnóstico')}</p>
-                           <p className="text-xs text-slate-500 line-clamp-1">{rec.chiefComplaint}</p>
-                           <p className="text-[10px] text-slate-400 mt-1">Dr(a) {rec.professionalName}</p>
-                        </div>
-                        <button onClick={() => setSelectedRecord(rec)} className="px-4 py-2 bg-indigo-50 text-indigo-600 font-bold text-sm rounded-xl hover:bg-indigo-100">{t('crm:btn_view_record', 'Ver Prontuário')}</button>
-                      </div>
-                    ))}
-                    {records.length === 0 && (
-                      <p className="text-center text-slate-400 py-8 text-sm">{t('crm:empty_records', 'Nenhum prontuário registrado para este paciente.')}</p>
-                    )}
-                  </div>
+                  {selectedCustomerId && (
+                    <PatientTimeline 
+                      clientId={selectedCustomerId} 
+                      onViewRecord={(rec) => setSelectedRecord(rec)} 
+                    />
+                  )}
                 </div>
               )}
             </>
@@ -373,6 +385,20 @@ const CRM = ({ selectedCustomerId, setSelectedCustomerId, userProfile }: CRMProp
         <ProntuarioModal 
           initialRecord={selectedRecord} 
           onClose={() => setSelectedRecord(null)}
+        />
+      )}
+
+      {isGerarDocumentoModalOpen && selectedCustomerId && (
+        <GerarDocumentoModal
+          clientId={selectedCustomerId}
+          onClose={() => setIsGerarDocumentoModalOpen(false)}
+        />
+      )}
+
+      {isAuditoriaModalOpen && selectedCustomerId && (
+        <AuditoriaModal
+          clientId={selectedCustomerId}
+          onClose={() => setIsAuditoriaModalOpen(false)}
         />
       )}
     </div>

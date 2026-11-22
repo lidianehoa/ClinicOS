@@ -1,369 +1,309 @@
-import { useState, useMemo, useEffect } from 'react';
-import { Bot, MessageCircle, TrendingUp, Send, Copy, Check, Sparkles } from 'lucide-react';
-import { subscribeAllDailyFlows, subscribeAllDespesas, toLocalDateString, canDelete, type Registro, type Despesa, type AppUser, getIntegrationsConfig } from '../services/dataService';
-import { callGemini, SYSTEM_PROMPT, AI_ENABLED } from '../services/aiService';
-import { useTranslation } from 'react-i18next';
+import { useState, useEffect, useMemo } from 'react';
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+import { 
+  Sparkles, 
+  Clock, 
+  Activity, 
+  CheckCircle, 
+  FileText, 
+  Plus,
+  AlertCircle,
+  FileCheck
+} from 'lucide-react';
+import { 
+  subscribeAllCasos, 
+  subscribeCustomers, 
+  subscribeAllAnalises,
+  subscribePacientes,
+  subscribeResponsaveis,
+  type AppUser,
+  type CasoClinico,
+  type Customer,
+  type AnaliseClinica,
+  type Paciente,
+  type Responsavel
+} from '../services/dataService';
+import LoadFromRecordModal from '../components/medical/LoadFromRecordModal';
 
-type AbaIA = 'mensagens' | 'financeiro';
-type TipoMensagem = 'retorno' | 'cobranca' | 'aniversario' | 'agendamento' | 'livre';
-interface ChatMsg { role: 'user' | 'ai'; content: string; }
-
-const TIPOS: { id: TipoMensagem; label: string; emoji: string; desc: string }[] = [
-  { id: 'retorno',      label: 'Pós-consulta',  emoji: '🐾', desc: 'Acompanhamento após atendimento' },
-  { id: 'cobranca',    label: 'Cobrança',       emoji: '💳', desc: 'Pagamento pendente (amigável)' },
-  { id: 'aniversario', label: 'Aniversário',    emoji: '🎂', desc: 'Felicitar aniversário do paciente' },
-  { id: 'agendamento', label: 'Agendamento',    emoji: '📅', desc: 'Confirmação ou lembrete' },
-  { id: 'livre',       label: 'Livre',          emoji: '✏️',  desc: 'Mensagem personalizada' },
-];
-
-const fmt = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const pf  = (v: any)   => parseFloat(String(v || '0').replace(',', '.'));
-
-// ─── Componente ───────────────────────────────────────────────────────────────
 
 const AssistenteIA = ({ userProfile }: { userProfile: AppUser | null }) => {
-  const { t } = useTranslation(['common']);
-  const [aba, setAba] = useState<AbaIA>('mensagens');
-  const [loading, setLoading] = useState(false);
-  const [hasKey, setHasKey] = useState(false);
   const isPt = navigator.language.startsWith('pt');
+  const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
+
+  const [casos, setCasos] = useState<CasoClinico[]>([]);
+  // Legacy customers (ainda usados por dados antigos)
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  // Novo modelo: pacientes + responsaveis
+  const [pacientes, setPacientes] = useState<Paciente[]>([]);
+  const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
+  const [analises, setAnalises] = useState<AnaliseClinica[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getIntegrationsConfig().then(data => {
-      if (data && data.geminiApiKey) setHasKey(true);
-    });
+    let unsubs = [] as (() => void)[];
+    
+    unsubs.push(subscribeAllCasos(setCasos));
+    unsubs.push(subscribeCustomers(setCustomers));       // legacy
+    unsubs.push(subscribePacientes(setPacientes));       // novo modelo
+    unsubs.push(subscribeResponsaveis(setResponsaveis)); // novo modelo
+    unsubs.push(subscribeAllAnalises(setAnalises));
+
+    const tId = setTimeout(() => setLoading(false), 800);
+
+    return () => {
+      unsubs.forEach(u => u());
+      clearTimeout(tId);
+    };
   }, []);
 
-  // Dados financeiros
-  const [allRecords, setAllRecords]   = useState<Registro[]>([]);
-  const [allDespesas, setAllDespesas] = useState<Despesa[]>([]);
-  useEffect(() => {
-    const u1 = subscribeAllDailyFlows(setAllRecords);
-    const u2 = subscribeAllDespesas(setAllDespesas);
-    return () => { u1(); u2(); };
-  }, []);
-
-  const mesAtual = toLocalDateString(new Date()).substring(0, 7);
-  const kpisCtx = useMemo(() => {
-    const mr = allRecords.filter(r => r._date?.startsWith(mesAtual));
-    const md = allDespesas.filter(d => d._date?.startsWith(mesAtual));
-    const fat = mr.reduce((s, r) => s + pf(r.valor), 0);
-    const desp = md.reduce((s, d) => s + pf(d.valor), 0);
-    const wAgo = new Date(); wAgo.setDate(wAgo.getDate() - 7);
-    const wStr = toLocalDateString(wAgo);
-    const wr = allRecords.filter(r => r._date && r._date >= wStr);
-    const wd = allDespesas.filter(d => d._date && d._date >= wStr);
+  const { total, pendentes, analisando, analisados } = useMemo(() => {
     return {
-      fat, desp, saldo: fat - desp,
-      ticket: mr.length > 0 ? fat / mr.length : 0,
-      fatSem: wr.reduce((s, r) => s + pf(r.valor), 0),
-      despSem: wd.reduce((s, d) => s + pf(d.valor), 0),
-      mes: new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-      total: allRecords.length,
+      total: casos.length,
+      pendentes: casos.filter(c => c.status === 'pendente').length,
+      analisando: casos.filter(c => c.status === 'analisando').length,
+      analisados: casos.filter(c => c.status === 'analisado').length,
     };
-  }, [allRecords, allDespesas, mesAtual]);
+  }, [casos]);
 
-  // ── Aba Mensagens ──────────────────────────────────────────────────────────
-  const [tipo, setTipo]         = useState<TipoMensagem>('retorno');
-  const [nome, setNome]         = useState('');
-  const [animal, setAnimal]     = useState('');
-  const [proc, setProc]         = useState('');
-  const [instrucao, setInstrucao] = useState('');
-  const [resultado, setResultado] = useState('');
-  const [copied, setCopied]     = useState(false);
+  const recentCasos = useMemo(() => {
+    // Mapa rápido: pacienteId → { paciente, tutor }
+    // Prioridade: novo modelo (pacientes+responsaveis) > legacy (customers.animais)
+    const pacienteMap = new Map<string, { nome: string; especie: string; raca: string; tutorNome: string }>();
 
-  const gerarMensagem = async () => {
-    if (!nome.trim()) return;
-    setLoading(true); setResultado('');
-    const tipoDesc: Record<TipoMensagem, string> = {
-      retorno: 'mensagem de acompanhamento pós-consulta',
-      cobranca: 'cobrança amigável de pagamento em aberto',
-      aniversario: 'felicitação de aniversário do paciente',
-      agendamento: 'confirmação ou lembrete de agendamento',
-      livre: instrucao || 'mensagem personalizada',
-    };
-    const prompt = `Crie uma ${tipoDesc[tipo]} para o cliente "${nome}"${animal ? `, cujo paciente se chama "${animal}"` : ''}${proc ? `. Último procedimento: ${proc}` : ''}${instrucao && tipo === 'livre' ? `. Instrução: ${instrucao}` : ''}.
+    // 1. Novo modelo
+    responsaveis.forEach(resp => {
+      const animaisDeste = pacientes.filter(p => p.tutorId === resp.id);
+      animaisDeste.forEach(p => {
+        pacienteMap.set(p.id, {
+          nome: p.nome,
+          especie: p.especie || '',
+          raca: p.raca || '',
+          tutorNome: resp.nomeCompleto || 'Tutor',
+        });
+      });
+    });
+    // Pacientes sem tutor correspondente (tutorId inválido/ausente)
+    pacientes.forEach(p => {
+      if (!pacienteMap.has(p.id)) {
+        pacienteMap.set(p.id, {
+          nome: p.nome,
+          especie: p.especie || '',
+          raca: p.raca || '',
+          tutorNome: 'Tutor',
+        });
+      }
+    });
 
-Regras: Tom caloroso e profissional. Máximo 3 parágrafos. Pronto para WhatsApp (sem markdown). Assine como "Equipe ClinicOS".`;
-    try {
-      const text = await callGemini([{ role: 'user', parts: [{ text: prompt }] }], SYSTEM_PROMPT);
-      setResultado(text);
-    } catch (e: any) {
-      setResultado(`❌ Erro: ${e.message}`);
-    } finally { setLoading(false); }
+    // 2. Legacy (customers com animais embutidos) — fallback
+    customers.forEach(customer => {
+      customer.animais?.forEach((a: any) => {
+        if (a.id && !pacienteMap.has(a.id)) {
+          pacienteMap.set(a.id, {
+            nome: a.nome || '',
+            especie: a.especie || '',
+            raca: a.raca || '',
+            tutorNome: customer.nome || 'Desconhecido',
+          });
+        }
+      });
+    });
+
+    return casos.slice(0, 10).map(caso => {
+      const resolved = pacienteMap.get(caso.pacienteId);
+
+      // Find most recent analise for this caso
+      const analise = analises
+        .filter(a => a.casoId === caso.id)
+        .sort((a, b) => b.numero - a.numero)[0];
+
+      return {
+        ...caso,
+        patientName: resolved?.nome || 'Desconhecido',
+        customerName: resolved?.tutorNome || 'Desconhecido',
+        patientDetails: resolved ? `${resolved.especie} • ${resolved.raca}` : '',
+        analiseResumo: analise ? (analise.interpretacaoClinica ? analise.interpretacaoClinica.substring(0, 100) + '...' : 'Análise estruturada.') : null
+      };
+    });
+  }, [casos, customers, pacientes, responsaveis, analises]);
+
+  const getStatusBadge = (status: CasoClinico['status']) => {
+    switch (status) {
+      case 'pendente':
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-xs font-semibold border border-amber-200 shadow-sm">
+            <Clock className="w-3.5 h-3.5" /> Aguardando IA
+          </span>
+        );
+      case 'analisando':
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 text-slate-600 rounded-full text-xs font-semibold border border-slate-200 shadow-sm">
+            <Activity className="w-3.5 h-3.5 animate-pulse" /> Analisando
+          </span>
+        );
+      case 'analisado':
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-teal-50 text-teal-600 rounded-full text-xs font-semibold border border-teal-200 shadow-sm">
+            <CheckCircle className="w-3.5 h-3.5" /> Concluído
+          </span>
+        );
+      case 'erro':
+        return (
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 rounded-full text-xs font-semibold border border-red-200 shadow-sm">
+            <AlertCircle className="w-3.5 h-3.5" /> Erro
+          </span>
+        );
+    }
   };
 
-  const copiar = () => { navigator.clipboard.writeText(resultado); setCopied(true); setTimeout(() => setCopied(false), 2000); };
-
-  // ── Aba Financeiro ─────────────────────────────────────────────────────────
-  const [pergunta, setPergunta]   = useState('');
-  const [chat, setChat]           = useState<ChatMsg[]>([]);
-
-  const perguntar = async () => {
-    if (!pergunta.trim()) return;
-    const q = pergunta.trim();
-    setPergunta('');
-    setChat(prev => [...prev, { role: 'user', content: q }]);
-    setLoading(true);
-    const ctx = `Dados financeiros da clínica (${kpisCtx.mes}): Faturamento: ${fmt(kpisCtx.fat)} | Despesas: ${fmt(kpisCtx.desp)} | Saldo: ${fmt(kpisCtx.saldo)} | Ticket médio: ${fmt(kpisCtx.ticket)} | Faturamento 7d: ${fmt(kpisCtx.fatSem)} | Despesas 7d: ${fmt(kpisCtx.despSem)}`;
-    const prompt = `${ctx}\n\nPergunta do gestor: "${q}"\n\nResponda de forma direta e objetiva usando os dados fornecidos.`;
-    try {
-      const text = await callGemini([{ role: 'user', parts: [{ text: prompt }] }], SYSTEM_PROMPT);
-      setChat(prev => [...prev, { role: 'ai', content: text }]);
-    } catch (e: any) {
-      setChat(prev => [...prev, { role: 'ai', content: `❌ Erro: ${e.message}` }]);
-    } finally { setLoading(false); }
+  const handleNewCase = () => {
+    window.location.href = '/';
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  
-  if (!AI_ENABLED) {
-    const bulletsEn = [
-      'Suggested responses for client messages (WhatsApp/Email)',
-      'Clinical protocol review and consultation',
-      'Quick information lookup during appointments',
-      'Automated summary of patient history'
-    ];
-  
-    const bulletsPt = [
-      'Respostas sugeridas para mensagens de clientes (WhatsApp/Email)',
-      'Revisão e consulta de protocolos clínicos',
-      'Busca rápida de informações durante as consultas',
-      'Resumo automático do histórico de pacientes'
-    ];
-  
-    const bullets = isPt ? bulletsPt : bulletsEn;
-
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[80vh] text-center animate-fade-in pb-10">
-        <div className="w-full max-w-2xl bg-white border-2 border-dashed border-slate-300 rounded-3xl p-12 flex flex-col items-center shadow-sm">
-          <Sparkles className="w-20 h-20 text-slate-400 opacity-40 mb-6" />
-          <h2 className="text-2xl font-bold text-slate-700 mb-2">
-            {t('common:ai.ready_to_activate', isPt ? 'Assistente IA — Pronto para ativar' : 'AI Assistant — Ready to activate')}
-          </h2>
-          
-          {!hasKey && (
-            <div className="text-left text-slate-500 mb-8 mt-6 bg-slate-50 border border-slate-100 p-6 rounded-2xl w-full">
-              <p className="font-semibold mb-3 text-slate-600">
-                {isPt 
-                  ? 'Este módulo integra-se ao Google Gemini (GenAI) para auxiliar sua equipe com:'
-                  : 'This module integrates with Google Gemini (GenAI) to assist your team with:'}
-              </p>
-              <ul className="space-y-2 list-disc list-inside text-sm">
-                {bullets.map((b, i) => <li key={i}>{b}</li>)}
-              </ul>
-            </div>
-          )}
-
-          {hasKey ? (
-            <p className="text-slate-600 mb-8 font-medium">
-              {isPt 
-                ? 'Assistente IA está configurado. Reinicie o aplicativo para ativar.'
-                : 'AI Assistant is configured. Restart the app to activate.'}
-            </p>
-          ) : (
-            <p className="text-slate-500 mb-8">
-              {isPt 
-                ? 'Adicione sua chave de API do Google GenAI em Configurações → Integrações para ativar o assistente inteligente da clínica.'
-                : 'Add your Google GenAI API key in Settings → Integrations to enable the AI assistant for your clinic.'}
-            </p>
-          )}
-
-          <button 
-            onClick={() => { window.location.search = '?tab=configuracoes' }}
-            className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2"
-          >
-            {isPt ? 'Configurar API Key' : 'Configure API Key'}
-          </button>
-        </div>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
-      <header className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-purple-600 flex items-center justify-center shadow-lg shadow-teal-200">
-          <Bot className="w-7 h-7 text-white" />
-        </div>
+    <div className="space-y-8 animate-fade-in pb-10 max-w-6xl mx-auto">
+      
+      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800">Dra. Elisa</h1>
-          <p className="text-slate-500 mt-0.5">Assistente IA · Gemini 2.5 Flash · ClinicOS</p>
+          <h1 className="text-3xl font-bold text-slate-800">
+            {isPt ? `Olá, ${userProfile?.nome?.split(' ')[0] || 'Doutor(a)'}!` : `Hello, ${userProfile?.nome?.split(' ')[0] || 'Doctor'}!`}
+          </h1>
+          <p className="text-slate-500 mt-1 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-teal-500" />
+            {isPt ? 'Visão geral dos seus exames e análises clínicas.' : 'Overview of your exams and clinical analysis.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => window.location.href = '/?tab=configuracoes'}
+            className="text-slate-500 hover:text-teal-600 font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-100 transition-colors flex items-center gap-2"
+          >
+            Gerenciar Protocolos
+          </button>
+          <button 
+            onClick={() => setIsLoadModalOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
+          >
+            <FileText className="w-5 h-5" />
+            {isPt ? 'Carregar do Prontuário' : 'Load from Record'}
+          </button>
+          <button 
+            onClick={handleNewCase}
+            className="bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-lg shadow-teal-500/30 transition-all flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            {isPt ? 'Novo Caso' : 'New Case'}
+          </button>
         </div>
       </header>
 
-      {/* Abas */}
-      <div className="flex gap-2 bg-white p-1.5 rounded-2xl border border-purple-100 w-fit shadow-sm">
-        <button onClick={() => setAba('mensagens')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${aba === 'mensagens' ? 'bg-primary text-white shadow-md shadow-primary/30' : 'text-slate-500 hover:text-slate-700'}`}>
-          <MessageCircle className="w-4 h-4" />Mensagens para Clientes
-        </button>
-        
-        {canDelete(userProfile?.role) && (
-          <button onClick={() => setAba('financeiro')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${aba === 'financeiro' ? 'bg-primary text-white shadow-md shadow-primary/30' : 'text-slate-500 hover:text-slate-700'}`}>
-            <TrendingUp className="w-4 h-4" />Consultoria Financeira
-          </button>
-        )}
+      {/* Métricas */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center gap-3 text-slate-500 font-medium mb-4">
+            <div className="p-2 bg-slate-100 rounded-lg text-slate-600"><FileText className="w-5 h-5" /></div>
+            Total de Casos
+          </div>
+          <div className="text-3xl font-bold text-slate-800">{total}</div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center gap-3 text-amber-600 font-medium mb-4">
+            <div className="p-2 bg-amber-50 rounded-lg"><Clock className="w-5 h-5" /></div>
+            Pendentes
+          </div>
+          <div className="text-3xl font-bold text-slate-800">{pendentes}</div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center gap-3 text-slate-600 font-medium mb-4">
+            <div className="p-2 bg-slate-50 rounded-lg"><Activity className="w-5 h-5" /></div>
+            Analisando
+          </div>
+          <div className="text-3xl font-bold text-slate-800">{analisando}</div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-5">
+            <CheckCircle className="w-24 h-24 text-teal-500" />
+          </div>
+          <div className="flex items-center gap-3 text-teal-600 font-medium mb-4 relative z-10">
+            <div className="p-2 bg-teal-50 rounded-lg"><FileCheck className="w-5 h-5" /></div>
+            Analisados
+          </div>
+          <div className="text-3xl font-bold text-slate-800 relative z-10">{analisados}</div>
+        </div>
       </div>
 
-      {/* ── ABA MENSAGENS ─────────────────────────────────────────────────── */}
-      {aba === 'mensagens' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-3xl shadow-sm border border-purple-100 p-6 space-y-5">
-            <h2 className="font-semibold text-slate-700 text-lg flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-teal-500" />Configure a mensagem
-            </h2>
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Tipo</label>
-              <div className="grid grid-cols-2 gap-2">
-                {TIPOS.map(t => (
-                  <button key={t.id} onClick={() => setTipo(t.id)}
-                    className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${tipo === t.id ? 'border-teal-400 bg-teal-50 text-teal-700 font-semibold' : 'border-slate-200 text-slate-600 hover:border-teal-200'}`}>
-                    <span className="mr-1.5">{t.emoji}</span>{t.label}
-                    <span className="block text-[10px] text-slate-400 mt-0.5">{t.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Nome do cliente *</label>
-              <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Maria Silva"
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Nome do paciente</label>
-                <input value={animal} onChange={e => setAnimal(e.target.value)} placeholder="Ex: Paciente A"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Procedimento</label>
-                <input value={proc} onChange={e => setProc(e.target.value)} placeholder="Ex: Consulta clínica"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400" />
-              </div>
-            </div>
-            {tipo === 'livre' && (
-              <div>
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Instrução</label>
-                <textarea value={instrucao} onChange={e => setInstrucao(e.target.value)} rows={3} placeholder="Descreva o que quer comunicar..."
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-400 resize-none" />
-              </div>
-            )}
-            <button onClick={gerarMensagem} disabled={loading || !nome.trim()}
-              className="w-full py-3.5 bg-gradient-to-r from-teal-500 to-purple-600 text-white font-semibold rounded-2xl hover:opacity-90 transition-opacity shadow-lg shadow-teal-200 disabled:opacity-50 flex items-center justify-center gap-2">
-              {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Gerando...</> : <><Sparkles className="w-4 h-4" />Gerar Mensagem</>}
-            </button>
-          </div>
-
-          <div className="bg-white rounded-3xl shadow-sm border border-purple-100 p-6 flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-slate-700 text-lg">Mensagem gerada</h2>
-              {resultado && (
-                <button onClick={copiar} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 text-xs font-semibold rounded-lg hover:bg-emerald-100 transition-colors">
-                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copied ? 'Copiado!' : 'Copiar'}
-                </button>
-              )}
-            </div>
-            {resultado ? (
-              <div className="flex-1 bg-slate-50 rounded-2xl p-4 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap border border-slate-100">{resultado}</div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-400 gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center">
-                  <MessageCircle className="w-8 h-8 text-teal-300" />
-                </div>
-                <p className="text-sm">Preencha os dados ao lado<br />e clique em "Gerar Mensagem"</p>
-              </div>
-            )}
-          </div>
+      {/* Lista de Casos Recentes */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-800">
+            {isPt ? 'Casos Recentes' : 'Recent Cases'}
+          </h2>
         </div>
-      )}
+        
+        {recentCasos.length === 0 ? (
+          <div className="p-10 text-center text-slate-500">
+            Nenhum caso clínico submetido ainda.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {recentCasos.map((caso) => (
+              <div key={caso.id} className="p-5 hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => window.location.href = `/?tab=caso-clinico&id=${caso.id}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 font-bold text-lg uppercase shrink-0">
+                      {caso.patientName.substring(0, 2)}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800 flex items-center gap-2 text-base">
+                        {caso.patientName}
+                      </h3>
+                      <p className="text-sm text-slate-500 mt-0.5">
+                        Tutor: {caso.customerName} • {caso.patientDetails}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col sm:items-end gap-2">
+                    {getStatusBadge(caso.status)}
+                    <span className="text-xs text-slate-400">
+                      {new Date(caso.criadoEm).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                </div>
 
-      {/* ── ABA FINANCEIRO ────────────────────────────────────────────────── */}
-      {aba === 'financeiro' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-3">
-            <h2 className="font-semibold text-slate-700 flex items-center gap-2 text-sm">
-              <TrendingUp className="w-4 h-4 text-teal-500" />Dados enviados à IA
-            </h2>
-            {[
-              ['Faturamento mês', fmt(kpisCtx.fat), 'emerald'],
-              ['Despesas mês',    fmt(kpisCtx.desp),  'red'],
-              ['Saldo real',      fmt(kpisCtx.saldo),  kpisCtx.saldo >= 0 ? 'violet' : 'red'],
-              ['Ticket médio',    fmt(kpisCtx.ticket), 'slate'],
-              ['Faturamento 7d',  fmt(kpisCtx.fatSem), 'emerald'],
-              ['Despesas 7d',     fmt(kpisCtx.despSem),'red'],
-            ].map(([label, value, color]) => (
-              <div key={label as string} className="bg-white rounded-2xl border border-purple-100 px-4 py-3 flex items-center justify-between shadow-sm">
-                <span className="text-xs text-slate-500 font-medium">{label}</span>
-                <span className={`text-sm font-bold text-${color}-600`}>{value}</span>
+                {caso.analiseResumo && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-start gap-2 text-sm text-slate-600 bg-slate-50/50 p-3 rounded-lg">
+                    <Sparkles className="w-4 h-4 text-teal-500 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="font-semibold text-slate-700">Resumo da última análise: </span>
+                      {caso.analiseResumo}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
-            <p className="text-[10px] text-slate-400 text-center">{kpisCtx.mes} · {kpisCtx.total} registros</p>
           </div>
-
-          <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-purple-100 flex flex-col" style={{ minHeight: 500 }}>
-            <div className="px-6 py-4 border-b border-purple-50 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-teal-100 flex items-center justify-center">
-                <Bot className="w-4 h-4 text-teal-600" />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-700 text-sm">Dra. Elisa — Consultora Financeira</p>
-                <p className="text-[10px] text-slate-400">Gemini 2.5 Flash · Contexto do mês atual</p>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {chat.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center text-slate-400 gap-3 py-12">
-                  <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center">
-                    <TrendingUp className="w-8 h-8 text-teal-300" />
-                  </div>
-                  <p className="text-sm font-medium text-slate-500">Pergunte sobre as finanças da clínica</p>
-                  <div className="flex flex-wrap gap-2 justify-center mt-1">
-                    {['Qual meu lucro bruto este mês?', 'Como está meu ticket médio?', 'As despesas estão sob controle?'].map(q => (
-                      <button key={q} onClick={() => { setPergunta(q); }}
-                        className="text-xs px-3 py-1.5 bg-teal-50 text-teal-600 rounded-full border border-teal-100 hover:bg-teal-100 transition-colors">
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {chat.map((m, i) => (
-                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary text-white rounded-tr-sm' : 'bg-teal-50 text-slate-700 rounded-tl-sm border border-teal-100'}`}>
-                    {m.content}
-                  </div>
-                </div>
-              ))}
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-teal-50 border border-teal-100 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
-                    {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />)}
-                    <span className="text-xs text-teal-500 ml-1">Analisando...</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="px-5 py-4 border-t border-purple-50">
-              <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-2 border border-slate-200 focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-500/10 transition-all">
-                <input value={pergunta} onChange={e => setPergunta(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !loading && perguntar()}
-                  placeholder="Pergunte sobre as finanças da clínica..."
-                  className="flex-1 bg-transparent text-sm text-slate-700 focus:outline-none placeholder-slate-400" />
-                <button onClick={perguntar} disabled={loading || !pergunta.trim()}
-                  className="w-8 h-8 bg-primary text-white rounded-xl flex items-center justify-center hover:bg-pink-600 transition-colors disabled:opacity-40">
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
+      </div>
+      {isLoadModalOpen && (
+        <LoadFromRecordModal
+          userProfile={userProfile}
+          onCancel={() => setIsLoadModalOpen(false)}
+          onSuccess={(casoId) => {
+            setIsLoadModalOpen(false);
+            window.location.href = `/?tab=caso-clinico&id=${casoId}`;
+          }}
+        />
       )}
     </div>
   );

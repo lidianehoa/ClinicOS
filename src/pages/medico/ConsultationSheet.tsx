@@ -4,7 +4,8 @@ import { db } from '../../services/firebase';
 import { AppUser, APP_ID, Consultation, SupplyUsed, Product } from '../../services/dataService';
 import PatientTimeline from '../../components/medical/PatientTimeline';
 import FinalizeConsultationModal from '../../components/medical/FinalizeConsultationModal';
-import { ChevronLeft, Save, CheckCircle, Plus, Trash2, Search, Loader2 } from 'lucide-react';
+import ConsultationPrintView from '../../components/medical/ConsultationPrintView';
+import { ChevronLeft, Save, CheckCircle, Plus, Trash2, Search, Loader2, Syringe, Printer } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface Props {
@@ -13,17 +14,60 @@ interface Props {
   onBack: () => void;
 }
 
+const EXAM_SYSTEMS = [
+  { id: 'hidratacao', label: 'B) Hidratação' },
+  { id: 'mucosas', label: 'C) Mucosas' },
+  { id: 'olhos', label: 'D) Olhos' },
+  { id: 'ouvidos', label: 'E) Ouvidos' },
+  { id: 'pele', label: 'F) Pele/Pelagem' },
+  { id: 'linfonodos', label: 'G) Linfonodos' },
+  { id: 'cardiorrespiratorio', label: 'H) Sist. Cardiorrespiratório' },
+  { id: 'digestorio', label: 'I) Sist. Digestório' },
+  { id: 'geniturinario', label: 'J) Sist. Geniturinário' },
+  { id: 'locomotor', label: 'K) Sist. Locomotor' },
+  { id: 'neurologico', label: 'L) Sist. Neurológico' },
+  { id: 'reprodutor', label: 'M) Sist. Reprodutor' },
+] as const;
+
 const ConsultationSheet = ({ consultationId, onBack }: Props) => {
   const { t } = useTranslation(['medical', 'common']);
   const [data, setData] = useState<Consultation | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showFinalize, setShowFinalize] = useState(false);
+  const [showPrint, setShowPrint] = useState(false);
 
   // Supples Search State
   const [searchSup, setSearchSup] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [searching, setSearching] = useState(false);
+
+  // Vaccines Summary State
+  const [vaccines, setVaccines] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchVaccines = async () => {
+      if (!data?.patientId) return;
+      try {
+        const q = query(
+          collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), 
+          where('patientId', '==', data.patientId),
+          where('type', '==', 'vaccine')
+        );
+        const snap = await getDocs(q);
+        const vacs = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        vacs.sort((a, b) => {
+          const dtA = new Date(`${a.date}T${a.time || '00:00:00'}`);
+          const dtB = new Date(`${b.date}T${b.time || '00:00:00'}`);
+          return dtB.getTime() - dtA.getTime();
+        });
+        setVaccines(vacs.slice(0, 3));
+      } catch (err) {
+        console.error('Error fetching vaccines', err);
+      }
+    };
+    fetchVaccines();
+  }, [data?.patientId]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -143,6 +187,9 @@ const ConsultationSheet = ({ consultationId, onBack }: Props) => {
           <ChevronLeft className="w-5 h-5" /> {t('common:back', 'Voltar')}
         </button>
         <div className="flex items-center gap-3">
+          <button onClick={() => setShowPrint(true)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-2 border border-slate-700">
+            <Printer className="w-4 h-4" /> Imprimir
+          </button>
           {!isCompleted && (
             <button onClick={() => handleSave()} disabled={saving} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl font-bold transition-all flex items-center gap-2">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -202,6 +249,27 @@ const ConsultationSheet = ({ consultationId, onBack }: Props) => {
           </div>
 
           <div className="space-y-6">
+            {/* RESUMO VACINAL */}
+            <div className="bg-slate-900 border border-emerald-500/20 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                  <Syringe className="w-4 h-4" /> {t('medical:vaccines.vaccine', 'Resumo Vacinal')}
+                </h3>
+              </div>
+              {vaccines.length > 0 ? (
+                <div className="space-y-2">
+                  {vaccines.map(v => (
+                    <div key={v.id} className="flex justify-between items-center text-sm border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                      <span className="text-white">{v.title}</span>
+                      <span className="text-slate-400">{v.date?.split('-').reverse().join('/')}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">Nenhuma vacina registrada recentemente.</p>
+              )}
+            </div>
+
             <div>
               <label className="text-sm font-bold text-slate-300 mb-2 block">QUEIXA PRINCIPAL</label>
               <textarea disabled={isCompleted} value={data.chiefComplaint || ''} onChange={e => handleUpdate('chiefComplaint', e.target.value)} className="w-full h-20 bg-slate-900 border border-white/5 rounded-xl p-3 text-white outline-none focus:border-teal-500 resize-none" />
@@ -212,7 +280,67 @@ const ConsultationSheet = ({ consultationId, onBack }: Props) => {
             </div>
             <div>
               <label className="text-sm font-bold text-slate-300 mb-2 block">EXAME FÍSICO</label>
-              <textarea disabled={isCompleted} value={data.physicalExam || ''} onChange={e => handleUpdate('physicalExam', e.target.value)} className="w-full h-24 bg-slate-900 border border-white/5 rounded-xl p-3 text-white outline-none focus:border-teal-500 resize-none" />
+              <div className="bg-slate-900 border border-white/5 rounded-xl p-4 space-y-6">
+                
+                {/* A) Avaliação Nutricional */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 border-b border-white/5 pb-4">
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-white">A) Avaliação Nutricional</p>
+                    <p className="text-xs text-slate-400">Escore de 1 a 9</p>
+                  </div>
+                  <select 
+                    disabled={isCompleted}
+                    value={data.physicalExamChecklist?.nutricional || ''}
+                    onChange={e => handleUpdate('physicalExamChecklist', { ...data.physicalExamChecklist, nutricional: e.target.value })}
+                    className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white outline-none w-24"
+                  >
+                    <option value=""></option>
+                    {[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>{n}</option>)}
+                  </select>
+                </div>
+
+                {/* B ao M */}
+                {EXAM_SYSTEMS.map(sys => {
+                  const check = (data.physicalExamChecklist as any)?.[sys.id];
+                  const status = check?.status || '';
+                  const notes = check?.notes || '';
+                  return (
+                    <div key={sys.id} className="border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <p className="text-sm font-bold text-white flex-1">{sys.label}</p>
+                        <div className="flex bg-slate-800 p-1 rounded-lg shrink-0">
+                          <button
+                            disabled={isCompleted}
+                            onClick={() => handleUpdate('physicalExamChecklist', { ...data.physicalExamChecklist, [sys.id]: { status: status === 'Normal' ? '' : 'Normal', notes: status === 'Normal' ? '' : notes } })}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${status === 'Normal' ? 'bg-teal-500 text-white' : 'text-slate-400 hover:text-white'}`}
+                          >
+                            Normal
+                          </button>
+                          <button
+                            disabled={isCompleted}
+                            onClick={() => handleUpdate('physicalExamChecklist', { ...data.physicalExamChecklist, [sys.id]: { status: status === 'Alterado' ? '' : 'Alterado', notes } })}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${status === 'Alterado' ? 'bg-rose-500 text-white' : 'text-slate-400 hover:text-white'}`}
+                          >
+                            Alterado
+                          </button>
+                        </div>
+                      </div>
+                      {status === 'Alterado' && (
+                        <div className="mt-3">
+                          <input 
+                            disabled={isCompleted}
+                            type="text" 
+                            placeholder="Descreva a alteração..." 
+                            value={notes}
+                            onChange={e => handleUpdate('physicalExamChecklist', { ...data.physicalExamChecklist, [sys.id]: { status, notes: e.target.value } })}
+                            className="w-full bg-slate-950 border border-rose-500/30 focus:border-rose-500 rounded-lg px-3 py-2 text-sm text-white outline-none placeholder:text-slate-600 transition-colors"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
             <div>
               <label className="text-sm font-bold text-slate-300 mb-2 block">DIAGNÓSTICO / SUSPEITA</label>
@@ -286,6 +414,10 @@ const ConsultationSheet = ({ consultationId, onBack }: Props) => {
           }} 
           onCancel={() => setShowFinalize(false)} 
         />
+      )}
+
+      {showPrint && data && (
+        <ConsultationPrintView consultation={data} onClose={() => setShowPrint(false)} />
       )}
     </div>
   );

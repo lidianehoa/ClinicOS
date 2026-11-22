@@ -1,13 +1,50 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.geminiProxy = void 0;
+exports.cancelarReceita = exports.farmaciaDispensar = exports.farmaciaConsultar = exports.validarPdfAssinado = exports.registerNewClinic = exports.resolveTenantByEmail = exports.generateNote = exports.analyzeCaso = exports.geminiProxy = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const params_1 = require("firebase-functions/params");
-const admin = require("firebase-admin");
+const admin = __importStar(require("firebase-admin"));
+const firestore_1 = require("firebase-admin/firestore");
+const auth_1 = require("firebase-admin/auth");
+const genkit_1 = require("genkit");
+const googleai_1 = require("@genkit-ai/googleai");
 admin.initializeApp();
 const geminiApiKey = (0, params_1.defineSecret)('GEMINI_API_KEY');
 // ─── Configuração Técnica Obrigatória ──────────────────────────────────────────
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-1.5-flash-latest';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 exports.geminiProxy = (0, https_1.onRequest)({
     region: 'us-central1',
@@ -16,7 +53,6 @@ exports.geminiProxy = (0, https_1.onRequest)({
     memory: '256MiB',
     cors: true,
 }, async (req, res) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     if (req.method !== 'POST') {
         res.status(405).json({ error: 'Method not allowed' });
         return;
@@ -48,16 +84,396 @@ exports.geminiProxy = (0, https_1.onRequest)({
         if (!response.ok) {
             console.error('Erro Gemini API:', result);
             res.status(response.status).json({
-                error: (_b = (_a = result === null || result === void 0 ? void 0 : result.error) === null || _a === void 0 ? void 0 : _a.message) !== null && _b !== void 0 ? _b : 'Erro na API Gemini',
+                error: result?.error?.message ?? 'Erro na API Gemini',
             });
             return;
         }
-        const text = (_h = (_g = (_f = (_e = (_d = (_c = result.candidates) === null || _c === void 0 ? void 0 : _c[0]) === null || _d === void 0 ? void 0 : _d.content) === null || _e === void 0 ? void 0 : _e.parts) === null || _f === void 0 ? void 0 : _f[0]) === null || _g === void 0 ? void 0 : _g.text) !== null && _h !== void 0 ? _h : 'Sem resposta.';
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text ?? 'Sem resposta.';
         res.status(200).json({ text });
     }
     catch (err) {
         console.error('Erro na Cloud Function geminiProxy:', err);
-        res.status(500).json({ error: (_j = err.message) !== null && _j !== void 0 ? _j : 'Erro interno.' });
+        res.status(500).json({ error: err.message ?? 'Erro interno.' });
     }
+});
+// ─── Inicialização Genkit ──────────────────────────────────────────────────
+// Usamos as referências diretas importadas do SDK para evitar problemas de nomeação da API
+const getModel = (objetivo) => {
+    if (objetivo === 'diagnostico_completo') {
+        return 'googleai/gemini-3.1-pro-preview'; // Diagnóstico clínico profundo
+    }
+    return 'googleai/gemini-3.5-flash'; // Triagem ou Laudo (Rápido e barato)
+};
+const getTokensLimit = (objetivo) => {
+    if (objetivo === 'triagem')
+        return 500;
+    if (objetivo === 'laudo')
+        return 1000;
+    return 2500; // diagnostico_completo
+};
+const initGenkit = (apiKey) => {
+    return (0, genkit_1.genkit)({
+        plugins: [(0, googleai_1.googleAI)({ apiKey })],
+    });
+};
+// ─── Genkit Flows (ClinicOS IA) ─────────────────────────────────────────────
+const analyzeCasoSchema = genkit_1.z.object({
+    resumoCasoAtualizado: genkit_1.z.string().describe('Resumo atualizado do caso considerando este novo exame e as informações novas (máx 3 parágrafos).'),
+    achados: genkit_1.z.array(genkit_1.z.string()).describe('Lista estruturada de achados clínicos baseada no exame e no histórico'),
+    diferenciais: genkit_1.z.array(genkit_1.z.string()).describe('Diagnósticos diferenciais sugeridos, se aplicável ao objetivo da análise'),
+    condutaSugerida: genkit_1.z.string().describe('Sugestão de conduta ou próximos passos'),
+    prescricoesSugeridas: genkit_1.z.array(genkit_1.z.string()).optional().describe('Sugestões de medicamentos e prescrições com base no quadro clínico, prontos para compor uma receita. Caso não haja, retorne vazio.'),
+});
+const generateNoteSchema = genkit_1.z.object({
+    nota: genkit_1.z.string().describe('Nota explicativa estruturada em formato de texto'),
+});
+exports.analyzeCaso = (0, https_1.onCall)({
+    secrets: [geminiApiKey],
+    region: 'us-central1',
+    timeoutSeconds: 180,
+    memory: '512MiB',
+    cors: true,
+}, async (request) => {
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+    const { casoId, tenantId, novoExameId, novoExameFileUrl, novoExameTipo, objetivoAnalise, focoAnalise } = request.data;
+    const apiKey = geminiApiKey.value();
+    const genkitAi = initGenkit(apiKey);
+    const db = (0, firestore_1.getFirestore)();
+    const tId = tenantId || 'clinicos_demo';
+    try {
+        // 1. Busca os dados do Caso Clínico
+        const casoRef = db.collection('clinicas').doc(tId).collection('casos_clinicos').doc(casoId);
+        const casoDoc = await casoRef.get();
+        if (!casoDoc.exists)
+            throw new Error('Caso clínico não encontrado');
+        const casoData = casoDoc.data();
+        // 2. Atualiza status
+        await casoRef.update({ status: 'analisando' });
+        if (novoExameId) {
+            await db.collection('clinicas').doc(tId).collection('exames').doc(novoExameId).update({
+                status: 'analisando'
+            });
+        }
+        // 3. Buscar e Filtrar Protocolos (Simulação de match básico por keywords no backend)
+        const protocolosSnapshot = await db.collection('clinicas').doc(tId).collection('protocolos_clinicos').where('ativo', '==', true).get();
+        let protocolosContext = '';
+        // Concatena sintomas e histórico para buscar keywords
+        const contextoBusca = (casoData.sintomasPrincipais + ' ' + casoData.historicoClinico).toLowerCase();
+        const protocolosRelevantes = protocolosSnapshot.docs
+            .map(doc => doc.data())
+            .filter(data => {
+            // Se o protocolo tiver tags, filtramos se alguma tag bater com o contexto
+            if (data.tags && Array.isArray(data.tags) && data.tags.length > 0) {
+                return data.tags.some((tag) => contextoBusca.includes(tag.toLowerCase()));
+            }
+            return true; // Se não tiver tag, assumimos que é global ou filtramos depois. Na prática, melhor ignorar se não der match, mas para MVP vamos incluir.
+        });
+        if (protocolosRelevantes.length > 0) {
+            protocolosContext = '\n\nProtocolos Clínicos RELEVANTES a serem considerados:\n' +
+                protocolosRelevantes.map(data => `### [Protocolo: ${data.titulo}]\n${data.conteudo}`).join('\n\n');
+        }
+        // 4. Constrói o Prompt Econômico (Resumo Anterior + Delta)
+        const resumoAnterior = casoData.resumoCaso ? `Resumo Anterior do Caso:\n${casoData.resumoCaso}\n\n` : '';
+        // TODO: Adicionar estruturações antigas de exames se houvesse lógica de longitudinalidade complexa, 
+        // mas o resumo atualizado já ajuda a consolidar.
+        const prompt = `
+    Atue como um Médico Veterinário especialista. 
+    ${resumoAnterior}
+    Atualização atual do caso (Novos dados):
+    ${casoData.isDomiciliar ? '**ATENÇÃO: Este é um ATENDIMENTO DOMICILIAR.** Leve isso em alta consideração ao sugerir a conduta: oriente sobre manejo ambiental na residência do tutor, facilidades/dificuldades de home care e indique se certos procedimentos precisam de encaminhamento para clínica/hospital ou se podem ser feitos no domicílio.' : ''}
+    Sintomas Principais Relatados: ${casoData.sintomasPrincipais || 'N/A'}
+    Histórico Clínico Recente: ${casoData.historicoClinico || 'N/A'}
+    
+    ${novoExameTipo ? `Foi anexado um novo exame do tipo "${novoExameTipo}". Por favor, analise a mídia anexada em conjunto com o contexto.` : 'Não há mídia de exame novo nesta requisição.'}
+    
+    Objetivo da análise: ${objetivoAnalise === 'triagem' ? 'Triagem Rápida' : objetivoAnalise === 'laudo' ? 'Laudo de Exame' : 'Diagnóstico Clínico Completo'}
+    ${focoAnalise ? `Instruções/Foco específico do veterinário: ${focoAnalise}` : ''}
+    ${protocolosContext}
+
+    Retorne o JSON estruturado contendo:
+    1. 'resumoCasoAtualizado': Um resumo consolidado e sucinto do caso inteiro até o momento, para eu economizar tokens nas próximas chamadas.
+    2. 'achados': Achados relevantes desta atualização/exame.
+    3. 'diferenciais': Possíveis diagnósticos (se o objetivo for diagnóstico completo ou laudo).
+    4. 'condutaSugerida': Próximos passos baseados na evolução e/ou protocolos aplicáveis.
+    `;
+        const modelRef = getModel(objetivoAnalise);
+        const maxOutputTokens = getTokensLimit(objetivoAnalise);
+        const promptMessage = [{ text: prompt }];
+        if (novoExameFileUrl) {
+            promptMessage.push({ media: { url: novoExameFileUrl } });
+        }
+        const { output } = await genkitAi.generate({
+            model: modelRef,
+            prompt: promptMessage,
+            config: {
+                maxOutputTokens: maxOutputTokens,
+            },
+            output: {
+                schema: analyzeCasoSchema
+            }
+        });
+        const analiseId = `analise_${Date.now()}`;
+        // Salva a nova análise
+        await db.collection('clinicas').doc(tId).collection('analises').doc(analiseId).set({
+            id: analiseId,
+            casoId,
+            numero: Date.now(),
+            exameId: novoExameId || null,
+            achados: output?.achados || [],
+            diferenciais: output?.diferenciais || [],
+            condutaSugerida: output?.condutaSugerida || '',
+            prescricoesSugeridas: output?.prescricoesSugeridas || [],
+            dataAnalise: new Date().toISOString()
+        });
+        // Atualiza o Caso com o novo resumo e status
+        await casoRef.update({
+            status: 'analisado',
+            resumoCaso: output?.resumoCasoAtualizado || casoData.resumoCaso || ''
+        });
+        if (novoExameId) {
+            await db.collection('clinicas').doc(tId).collection('exames').doc(novoExameId).update({
+                status: 'analisado',
+                analiseId: analiseId
+            });
+        }
+        return { success: true, analiseId, output };
+    }
+    catch (error) {
+        console.error('Error analyzing caso:', error);
+        // Em caso de erro, reverter status se possivel (simplificado)
+        const casoRef = db.collection('clinicas').doc(tId).collection('casos_clinicos').doc(casoId);
+        await casoRef.update({ status: 'erro' });
+        throw new https_1.HttpsError('internal', error.message);
+    }
+});
+exports.generateNote = (0, https_1.onCall)({
+    secrets: [geminiApiKey],
+    region: 'us-central1',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+    cors: true,
+}, async (request) => {
+    if (!request.auth)
+        throw new https_1.HttpsError('unauthenticated', 'User must be authenticated');
+    const { achados, diferenciais, condutaSugerida } = request.data;
+    const apiKey = geminiApiKey.value();
+    const genkitAi = initGenkit(apiKey);
+    try {
+        const prompt = `
+    Com base na seguinte análise de exame veterinário, redija uma nota explicativa clara e profissional para o prontuário.
+    A nota deve, OBRIGATORIAMENTE, seguir este template e estar bem formatada:
+    1. Justificativa clínica (breve introdução)
+    2. Achados principais
+    3. Diagnósticos Diferenciais
+    4. Conduta Sugerida
+    5. Monitoramento / Próximos Passos
+    
+    Dados da análise:
+    Achados: ${(achados || []).join('; ')}
+    Diferenciais: ${(diferenciais || []).join('; ')}
+    Conduta: ${condutaSugerida || ''}
+    `;
+        const { output } = await genkitAi.generate({
+            model: 'googleai/gemini-3.5-flash',
+            prompt,
+            output: {
+                schema: generateNoteSchema
+            }
+        });
+        return { success: true, nota: output?.nota || '' };
+    }
+    catch (error) {
+        console.error('Error generating note:', error);
+        throw new https_1.HttpsError('internal', error.message);
+    }
+});
+exports.resolveTenantByEmail = (0, https_1.onCall)({
+    region: 'us-central1',
+    cors: true,
+}, async (request) => {
+    const email = (request.data?.email || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+        throw new https_1.HttpsError('invalid-argument', 'E-mail inválido.');
+    }
+    const db = (0, firestore_1.getFirestore)();
+    const indexDoc = await db.collection('staff_email_index').doc(email).get();
+    if (!indexDoc.exists) {
+        return { found: false, count: 0 };
+    }
+    const data = indexDoc.data();
+    const tenants = data.tenants || (data.tenantId ? [{ tenantId: data.tenantId, role: data.role || 'staff' }] : []);
+    return {
+        found: true,
+        count: tenants.length,
+        defaultTenantId: data.defaultTenantId || tenants[0]?.tenantId || null,
+        tenants: tenants.map((t) => ({ tenantId: t.tenantId, role: t.role }))
+    };
+});
+exports.registerNewClinic = (0, https_1.onCall)({
+    region: 'us-central1',
+    cors: true,
+}, async (request) => {
+    const { clinicName, ownerName, email, password, phone, crmv } = request.data || {};
+    if (!clinicName || !email || !password || !ownerName) {
+        throw new https_1.HttpsError('invalid-argument', 'Campos obrigatórios ausentes.');
+    }
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const db = (0, firestore_1.getFirestore)();
+    const auth = (0, auth_1.getAuth)();
+    let userRecord;
+    try {
+        userRecord = await auth.getUserByEmail(cleanEmail);
+    }
+    catch (err) {
+        if (err.code === 'auth/user-not-found') {
+            userRecord = await auth.createUser({
+                email: cleanEmail,
+                password: password,
+                displayName: ownerName,
+            });
+        }
+        else {
+            throw new https_1.HttpsError('internal', err.message);
+        }
+    }
+    const slug = clinicName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '_')
+        .slice(0, 25);
+    const tenantId = `clinic_${slug}_${Date.now().toString(36)}`;
+    // 1. Create Tenant Record
+    await db.collection('tenants').doc(tenantId).set({
+        id: tenantId,
+        nome: clinicName,
+        ownerUid: userRecord.uid,
+        ownerEmail: cleanEmail,
+        ownerName: ownerName,
+        phone: phone || '',
+        crmv: crmv || '',
+        plano: 'pro',
+        status: 'active',
+        createdAt: new Date().toISOString()
+    });
+    // 2. Create User Profile
+    await db.collection('usuarios').doc(userRecord.uid).set({
+        uid: userRecord.uid,
+        nome: ownerName,
+        email: cleanEmail,
+        role: 'administrador',
+        activeTenantId: tenantId,
+        tenants: [tenantId],
+        crmv: crmv || '',
+        status: 'ativo',
+        createdAt: new Date().toISOString()
+    }, { merge: true });
+    // 3. Register in staff_email_index
+    const indexRef = db.collection('staff_email_index').doc(cleanEmail);
+    const indexSnap = await indexRef.get();
+    let existingTenants = indexSnap.exists ? (indexSnap.data()?.tenants || []) : [];
+    if (!existingTenants.some((t) => t.tenantId === tenantId)) {
+        existingTenants.push({ tenantId, role: 'administrador', status: 'active', clinicName });
+    }
+    await indexRef.set({
+        email: cleanEmail,
+        tenants: existingTenants,
+        defaultTenantId: tenantId,
+        updatedAt: new Date().toISOString()
+    }, { merge: true });
+    // 4. Create Staff in Clinic
+    const staffId = `staff_${Date.now()}`;
+    await db.collection('clinicas').doc(tenantId).collection('staff').doc(staffId).set({
+        id: staffId,
+        name: ownerName,
+        email: cleanEmail,
+        accessLevel: 'Admin',
+        professionalId: crmv || '',
+        phone: phone || '',
+        status: 'Active',
+        createdAt: new Date().toISOString()
+    });
+    // 5. Initialize config documents
+    await db.collection('clinicas').doc(tenantId).collection('config').doc('clinic').set({
+        name: clinicName,
+        phone: phone || '',
+        email: cleanEmail,
+        address: '',
+        updatedAt: new Date().toISOString()
+    });
+    await db.collection('clinicas').doc(tenantId).collection('config').doc('homecare').set({
+        ativo: false,
+        enderecoBase: '',
+        valorKm: '3.50',
+        taxaBase: '50.00',
+        distanciaMaximaKm: '50',
+        updatedAt: new Date().toISOString()
+    });
+    await db.collection('clinicas').doc(tenantId).collection('config').doc('fiscal').set({
+        cnpj: '',
+        razaoSocial: clinicName,
+        nomeFantasia: clinicName,
+        inscricaoEstadual: '',
+        regimeTributario: 'Simples Nacional',
+        updatedAt: new Date().toISOString()
+    });
+    await db.collection('clinicas').doc(tenantId).collection('config').doc('integrations').set({
+        whatsappEnabled: false,
+        googleCalendarEnabled: false,
+        updatedAt: new Date().toISOString()
+    });
+    return { success: true, tenantId, uid: userRecord.uid };
+});
+// ─── Assinatura Digital ICP-Brasil: Validação de PDF Assinado ───────────────
+const validarPdfAssinado_1 = require("./validarPdfAssinado");
+exports.validarPdfAssinado = (0, https_1.onCall)({
+    region: 'us-central1',
+    memory: '512MiB',
+    timeoutSeconds: 60,
+}, async (request) => {
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'Usuário não autenticado.');
+    }
+    return await (0, validarPdfAssinado_1.processarValidacaoPdfAssinado)(request.auth.uid, request.data);
+});
+// ─── Portal da Farmácia & Token de Dispensação ─────────────────────────────
+const farmaciaService_1 = require("./farmaciaService");
+exports.farmaciaConsultar = (0, https_1.onCall)({
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    cors: true,
+}, async (request) => {
+    const rawIp = request.rawRequest?.headers?.['x-forwarded-for'] ||
+        request.rawRequest?.ip ||
+        '127.0.0.1';
+    const clientIp = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : '127.0.0.1';
+    const token = request.data?.token || '';
+    return await (0, farmaciaService_1.processarConsultaFarmacia)(clientIp, token);
+});
+exports.farmaciaDispensar = (0, https_1.onCall)({
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    cors: true,
+}, async (request) => {
+    const rawIp = request.rawRequest?.headers?.['x-forwarded-for'] ||
+        request.rawRequest?.ip ||
+        '127.0.0.1';
+    const clientIp = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : '127.0.0.1';
+    return await (0, farmaciaService_1.processarDispensacaoFarmacia)(clientIp, request.data);
+});
+exports.cancelarReceita = (0, https_1.onCall)({
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 30,
+}, async (request) => {
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'Usuário não autenticado.');
+    }
+    const { tenantId, receitaId, motivo } = request.data;
+    return await (0, farmaciaService_1.processarCancelamentoReceita)(request.auth.uid, tenantId, receitaId, motivo);
 });
 //# sourceMappingURL=index.js.map

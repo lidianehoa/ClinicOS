@@ -8,10 +8,11 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 
-const APP_ID = import.meta.env.VITE_APP_TENANT_ID || 'clinicos_demo';
+import { getActiveTenantId } from './dataService';
 
-// Helpers para caminhos
-const CFG_DOC = (col: string, id: string) => doc(db!, 'bea_data', APP_ID, col, id);
+// Helpers para caminhos isolados por clínica
+const CFG_DOC = (col: string, id: string, tenantId: string = getActiveTenantId()) => doc(db!, 'clinicas', tenantId, col, id);
+const PRICING_COL = (tenantId: string = getActiveTenantId()) => collection(db!, 'clinicas', tenantId, 'pricing_services');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIPOS E INTERFACES
@@ -236,19 +237,19 @@ export const getPricingConfig = async (): Promise<PricingConfig> => {
 
 // --- Services Pricing ---
 
-export const saveServicePricing = async (pricing: ServicePricingInput & { result: PricingResult }): Promise<void> => {
+export const saveServicePricing = async (pricing: ServicePricingInput & { result: PricingResult }, tenantId: string = getActiveTenantId()): Promise<void> => {
   if (!db) return;
   const pricingData = {
     ...pricing,
     updatedAt: new Date().toISOString()
   };
-  await setDoc(doc(db, 'bea_data', APP_ID, 'pricing_services', pricing.serviceId), pricingData, { merge: true });
+  await setDoc(doc(PRICING_COL(tenantId), pricing.serviceId), pricingData, { merge: true });
 };
 
-export const subscribeServicePricingList = (callback: (pricings: (ServicePricingInput & { result: PricingResult })[]) => void): (() => void) => {
+export const subscribeServicePricingList = (callback: (pricings: (ServicePricingInput & { result: PricingResult })[]) => void, tenantId: string = getActiveTenantId()): (() => void) => {
   if (!db) { callback([]); return () => {}; }
   return onSnapshot(
-    collection(db, 'bea_data', APP_ID, 'pricing_services'),
+    PRICING_COL(tenantId),
     snap => {
       const list = snap.docs.map(d => d.data() as (ServicePricingInput & { result: PricingResult }));
       callback(list);

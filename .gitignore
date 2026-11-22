@@ -3,3 +3,15 @@ dist
 .env
 *.local
 .firebase
+
+node_modules/
+functions/node_modules/
+.firebase/
+.env
+.env.local
+users.json
+updatePassword.cjs
+
+scripts/
+functions/changePassword.mjs
+functions/updatePassword.js
