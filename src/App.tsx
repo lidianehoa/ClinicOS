@@ -20,6 +20,7 @@ import ContasPagar from './pages/financeiro/ContasPagar';
 import ContasReceber from './pages/financeiro/ContasReceber';
 import RelatoriosFinanceiros from './pages/financeiro/RelatoriosFinanceiros';
 import PainelFinanceiro from './pages/financeiro/PainelFinanceiro';
+import Precificacao from './pages/financeiro/Precificacao';
 import Servicos from './pages/cadastros/Servicos';
 import Reconciliation from './pages/Reconciliation';
 import PDVAutonomo from './pages/PDVAutonomo';
@@ -37,7 +38,7 @@ import {
 import SetupGuide from './pages/SetupGuide';
 import { PortalFarmacia } from './pages/PortalFarmacia';
 
-export type ActiveTab = 'painel-financeiro' | 'contas-pagar' | 'contas-receber' | 'relatorios-financeiros' | 'servicos' | 'agendamentos' | 'products' | 'reconciliation' | 'caixa' | 'dashboard' | 'crm' | 'importar' | 'assistente' | 'configuracoes' | 'admin' | 'consultas' | 'internacao' | 'cirurgias' | 'caso-clinico' | 'responsaveis' | 'animais' | 'historico';
+export type ActiveTab = 'painel-financeiro' | 'precificacao' | 'contas-pagar' | 'contas-receber' | 'relatorios-financeiros' | 'servicos' | 'agendamentos' | 'products' | 'reconciliation' | 'caixa' | 'dashboard' | 'crm' | 'importar' | 'assistente' | 'configuracoes' | 'admin' | 'consultas' | 'internacao' | 'cirurgias' | 'caso-clinico' | 'responsaveis' | 'animais' | 'historico';
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -54,7 +55,7 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') as ActiveTab;
-    if (tab && ['painel-financeiro', 'contas-pagar', 'contas-receber', 'relatorios-financeiros', 'servicos', 'agendamentos', 'products', 'reconciliation', 'caixa', 'dashboard', 'crm', 'importar', 'assistente', 'configuracoes', 'admin', 'consultas', 'internacao', 'cirurgias', 'caso-clinico', 'responsaveis', 'animais', 'historico'].includes(tab)) {
+    if (tab && ['painel-financeiro', 'precificacao', 'contas-pagar', 'contas-receber', 'relatorios-financeiros', 'servicos', 'agendamentos', 'products', 'reconciliation', 'caixa', 'dashboard', 'crm', 'importar', 'assistente', 'configuracoes', 'admin', 'consultas', 'internacao', 'cirurgias', 'caso-clinico', 'responsaveis', 'animais', 'historico'].includes(tab)) {
       setActiveTab(tab);
     }
   }, []);
@@ -201,6 +202,7 @@ function App() {
       {activeTab === 'contas-receber' && <ContasReceber />}
       {activeTab === 'relatorios-financeiros' && <RelatoriosFinanceiros />}
       {activeTab === 'painel-financeiro' && <PainelFinanceiro />}
+      {activeTab === 'precificacao' && <Precificacao />}
       {activeTab === 'products' && <Products />}
       {activeTab === 'reconciliation' && <Reconciliation />}
       {activeTab === 'caixa' && <Caixa userProfile={profile} />}

@@ -1069,8 +1069,8 @@ export const subscribeServices = (callback: (services: ClinicService[]) => void)
   return onSnapshot(
     CFG_COL('services'),
     snap => {
-      const list = snap.docs.map(d => d.data() as ClinicService);
-      list.sort((a, b) => a.name.localeCompare(b.name));
+      const list = snap.docs.map(d => ({ ...(d.data() as ClinicService), id: (d.data() as ClinicService).id || d.id }));
+      list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
       callback(list);
     },
     err => { console.error('subscribeServices:', err.code, err.message); callback([]); }
