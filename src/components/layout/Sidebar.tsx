@@ -43,11 +43,11 @@ const navGroups: NavGroup[] = [
   {
     label: 'FINANCEIRO',
     items: [
+      { id: 'painel-financeiro', transKey: '',                  labelStr: 'Painel Financeiro', icon: PieChart },
       { id: 'caixa',         transKey: 'nav.cashier',           labelStr: 'Caixa', icon: DollarSign },
       { id: 'contas-receber',transKey: '',                      labelStr: 'Contas a Receber', icon: ArrowDownCircle },
       { id: 'contas-pagar',  transKey: '',                      labelStr: 'Contas a Pagar', icon: ArrowUpCircle },
       { id: 'reconciliation',transKey: 'nav.reconciliation',    labelStr: 'Conciliação Bancária', icon: GitMerge },
-      { id: 'relatorios-financeiros', transKey: '',             labelStr: 'Relatórios Financeiros', icon: PieChart },
     ]
   },
   {

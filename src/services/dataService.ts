@@ -2912,6 +2912,9 @@ export interface ContaReceber {
   recebidoPor?: string;
   observacao?: string;
   observacoes?: string;
+  formaPagamento?: string;
+  /** Compra de equipamento/estrutura: fica fora do lucro operacional */
+  investimento?: boolean;
   criadoEm: string;
   criadoPor?: string;
   tenantId: string;
@@ -2931,6 +2934,9 @@ export interface ContaPagar {
   pagoPor?: string;
   observacao?: string;
   observacoes?: string;
+  formaPagamento?: string;
+  /** Compra de equipamento/estrutura: fica fora do lucro operacional */
+  investimento?: boolean;
   criadoEm: string;
   criadoPor?: string;
   tenantId: string;
@@ -2941,6 +2947,8 @@ export interface CategoriaFinanceira {
   nome: string;
   tipo: 'receita' | 'despesa';
   cor?: string;
+  /** Categoria de investimento (equipamentos): fica fora do lucro operacional */
+  investimento?: boolean;
   tenantId: string;
 }
 
@@ -3272,4 +3280,35 @@ export const saveRoteiroAnamnese = async (roteiro: any): Promise<string> => {
   const safeId = roteiro.id || `rot_${Date.now()}`;
   await setDoc(doc(roteirosAnamneseCol(), safeId), { ...roteiro, id: safeId }, { merge: true });
   return safeId;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CAIXA (PDV) COM DATA — para o Painel Financeiro
+// O id do documento diário é a data (AAAA-MM-DD).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const subscribeCaixaComData = (
+  callback: (dados: { entradas: (Registro & { _date: string })[]; saidas: (Despesa & { _date: string })[] }) => void
+): (() => void) => {
+  if (!db) { callback({ entradas: [], saidas: [] }); return () => {}; }
+  let entradas: (Registro & { _date: string })[] = [];
+  let saidas: (Despesa & { _date: string })[] = [];
+  const avisar = () => callback({ entradas, saidas });
+  const u1 = onSnapshot(
+    dailyFlowCol(),
+    snap => {
+      entradas = snap.docs.flatMap(d => ((d.data().records as Registro[]) ?? []).map(r => ({ ...r, _date: r._date || d.id })));
+      avisar();
+    },
+    err => { console.error('subscribeCaixaComData (entradas):', err.code, err.message); avisar(); }
+  );
+  const u2 = onSnapshot(
+    dailyExpensesCol(),
+    snap => {
+      saidas = snap.docs.flatMap(d => ((d.data().despesas as Despesa[]) ?? []).map(r => ({ ...r, _date: r._date || d.id })));
+      avisar();
+    },
+    err => { console.error('subscribeCaixaComData (saídas):', err.code, err.message); avisar(); }
+  );
+  return () => { u1(); u2(); };
 };
