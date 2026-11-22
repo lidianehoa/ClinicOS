@@ -48,8 +48,12 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
     sexo: 'Macho',
     idade: '',
     peso: '',
-    tutorId: ''
+    tutorId: '',
+    obito: false,
+    dataObito: '',
+    causaObito: ''
   });
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'ativos' | 'obitos'>('todos');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -84,9 +88,17 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       const matchesEspecie = filterEspecie === 'todas' || 
         (p.especie || '').toLowerCase() === filterEspecie.toLowerCase();
 
-      return matchesText && matchesEspecie;
-    });
-  }, [pacientes, search, filterEspecie, responsaveisMap]);
+      const matchesStatus =
+        filtroStatus === 'todos' || (filtroStatus === 'obitos' ? !!p.obito : !p.obito);
+
+      return matchesText && matchesEspecie && matchesStatus;
+    })
+    // Pacientes que vieram a óbito ficam no fim da lista
+    .sort((a, b) => Number(!!a.obito) - Number(!!b.obito));
+  }, [pacientes, search, filterEspecie, filtroStatus, responsaveisMap]);
+
+  const totalObitos = useMemo(() => pacientes.filter(p => p.obito).length, [pacientes]);
+  const fmtData = (iso?: string) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '');
 
   const openNewModal = () => {
     setSelectedPaciente(null);
@@ -99,7 +111,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       sexo: 'Macho',
       idade: '',
       peso: '',
-      tutorId: responsaveis.length > 0 ? responsaveis[0].id : ''
+      tutorId: responsaveis.length > 0 ? responsaveis[0].id : '',
+      obito: false,
+      dataObito: '',
+      causaObito: ''
     });
     setIsModalOpen(true);
   };
@@ -116,7 +131,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       sexo: p.sexo,
       idade: String(p.idade || ''),
       peso: String(p.peso || ''),
-      tutorId: p.tutorId
+      tutorId: p.tutorId,
+      obito: !!p.obito,
+      dataObito: p.dataObito || '',
+      causaObito: p.causaObito || ''
     });
     setIsModalOpen(true);
   };
@@ -143,7 +161,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
         idade: formData.idade.trim() || '0',
         peso: Number(formData.peso) || 0,
         tutorId: formData.tutorId,
-        criadoEm: selectedPaciente?.criadoEm || new Date().toISOString()
+        criadoEm: selectedPaciente?.criadoEm || new Date().toISOString(),
+        obito: formData.obito,
+        dataObito: formData.dataObito,
+        causaObito: formData.causaObito.trim()
       });
       setIsModalOpen(false);
     } catch (err) {
@@ -234,6 +255,18 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
               {esp === 'todas' ? 'Todas Espécies' : esp}
             </button>
           ))}
+          <span className="w-px h-5 bg-slate-200 mx-1" />
+          {([['todos', 'Todos'], ['ativos', 'Ativos'], ['obitos', `Óbitos (${totalObitos})`]] as const).map(([k, rotulo]) => (
+            <button
+              key={k}
+              onClick={() => setFiltroStatus(k)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+                filtroStatus === k ? 'bg-slate-700 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {rotulo}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -278,13 +311,20 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
               <div
                 key={p.id}
                 onClick={() => onOpenConsulta && onOpenConsulta(p.id)}
-                className="bg-white rounded-3xl p-5 border border-slate-200 hover:border-teal-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden"
+                className={`rounded-3xl p-5 border hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden ${
+                  p.obito ? 'bg-slate-50 border-slate-300 hover:border-slate-400' : 'bg-white border-slate-200 hover:border-teal-400'
+                }`}
               >
+                {p.obito && (
+                  <div className="absolute top-0 right-0 bg-slate-700 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-bl-2xl">
+                    Óbito{p.dataObito ? ` · ${fmtData(p.dataObito)}` : ''}
+                  </div>
+                )}
                 {/* Linha Superior */}
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                      <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 ${p.obito ? 'bg-slate-200 border-slate-300 grayscale' : 'bg-amber-50 border-amber-200'}`}>
                         {getSpeciesIcon(p.especie)}
                       </div>
                       <div>
@@ -294,6 +334,9 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
                         <p className="text-xs text-slate-500 font-medium">
                           {p.especie} • {p.raca || 'SRD'}
                         </p>
+                        {p.obito && p.causaObito && (
+                          <p className="text-[11px] text-slate-500 italic mt-0.5">{p.causaObito}</p>
+                        )}
                       </div>
                     </div>
 
@@ -347,7 +390,7 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
                   <span className="text-xs text-teal-600 font-bold group-hover:underline flex items-center gap-1">
                     <Stethoscope className="w-3.5 h-3.5" />
-                    Abrir Consulta
+                    {p.obito ? 'Ver prontuário' : 'Abrir Consulta'}
                   </span>
                   <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-teal-600 group-hover:text-white flex items-center justify-center transition-all text-slate-500">
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -514,6 +557,41 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
                   />
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.obito}
+                    onChange={e => setFormData({ ...formData, obito: e.target.checked })}
+                    className="w-4 h-4 accent-slate-700"
+                  />
+                  Paciente veio a óbito
+                </label>
+                {formData.obito && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Data do óbito</label>
+                      <input
+                        type="date"
+                        value={formData.dataObito}
+                        onChange={e => setFormData({ ...formData, dataObito: e.target.value })}
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Causa / observação</label>
+                      <input
+                        type="text"
+                        value={formData.causaObito}
+                        onChange={e => setFormData({ ...formData, causaObito: e.target.value })}
+                        placeholder="Ex.: eutanásia, parvovirose"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">

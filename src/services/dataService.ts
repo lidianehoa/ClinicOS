@@ -2446,6 +2446,10 @@ export interface Paciente {
   fotoUrl?: string;
   criadoEm: string;
   tenantId?: string;
+  /** Paciente que veio a óbito (inclui eutanásia) */
+  obito?: boolean;
+  dataObito?: string;   // AAAA-MM-DD
+  causaObito?: string;
 }
 
 export interface ExameFisicoItem {
@@ -2625,6 +2629,11 @@ export const savePaciente = async (paciente: Partial<Paciente> & { id?: string }
     criadoEm: paciente.criadoEm || new Date().toISOString(),
     tenantId: APP_ID
   };
+  if (paciente.obito !== undefined) {
+    data.obito = !!paciente.obito;
+    data.dataObito = paciente.obito ? paciente.dataObito || '' : '';
+    data.causaObito = paciente.obito ? paciente.causaObito || '' : '';
+  }
   await setDoc(doc(pacientesCol(), safeId), data, { merge: true });
   return safeId;
 };
