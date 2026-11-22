@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Upload, LogOut, Shield, DollarSign, Settings, ShieldCheck, Calendar, GitMerge, Package, Stethoscope, Sparkles, PawPrint, History, ArrowDownCircle, ArrowUpCircle, PieChart, Briefcase, Calculator } from 'lucide-react';
+import { LayoutDashboard, Users, Upload, LogOut, Shield, DollarSign, Settings, ShieldCheck, Calendar, GitMerge, Package, Stethoscope, Sparkles, PawPrint, History, ArrowDownCircle, ArrowUpCircle, PieChart, Briefcase, Calculator, ShoppingCart } from 'lucide-react';
 import { ActiveTab } from '../../App';
 import { AppUser } from '../../services/dataService';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +45,7 @@ const navGroups: NavGroup[] = [
     items: [
       { id: 'painel-financeiro', transKey: '',                  labelStr: 'Painel Financeiro', icon: PieChart },
       { id: 'precificacao',  transKey: '',                      labelStr: 'Precificação', icon: Calculator },
+      { id: 'compras',       transKey: '',                      labelStr: 'Compras', icon: ShoppingCart },
       { id: 'caixa',         transKey: 'nav.cashier',           labelStr: 'Caixa', icon: DollarSign },
       { id: 'contas-receber',transKey: '',                      labelStr: 'Contas a Receber', icon: ArrowDownCircle },
       { id: 'contas-pagar',  transKey: '',                      labelStr: 'Contas a Pagar', icon: ArrowUpCircle },

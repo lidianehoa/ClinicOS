@@ -168,3 +168,40 @@ export const subscribeFichas = (cb: (l: Ficha[]) => void) => {
 };
 export const saveFicha = (f: Ficha) =>
   setDoc(doc(col('precificacao_fichas'), f.serviceId), limpar({ ...f, id: f.serviceId, atualizadoEm: new Date().toISOString() }));
+
+// ── Planejamento de compras ──────────────────────────────────────────────
+
+export type TipoCompra = 'insumo' | 'medicamento' | 'equipamento';
+export type Prioridade = 'urgente' | 'importante' | 'quando_der';
+
+export interface ItemCompra {
+  id: string;
+  nome: string;
+  tipo: TipoCompra;
+  qtd: number;                 // embalagens/unidades a comprar
+  precoUnit: number;           // preço estimado de cada uma
+  fornecedor?: string;
+  link?: string;
+  prioridade: Prioridade;
+  mesPrevisto?: string;        // AAAA-MM (vazio = sem data)
+  status: 'planejado' | 'comprado' | 'cancelado';
+  insumoId?: string;           // ligado a um insumo da Precificação
+  obs?: string;
+  compradoEm?: string;
+  valorPago?: number;
+  contaPagarId?: string;
+  criadoEm?: string;
+}
+
+export const subscribeCompras = (cb: (l: ItemCompra[]) => void) => {
+  if (!db) { cb([]); return () => {}; }
+  return onSnapshot(col('compras_planejadas'),
+    s => cb(s.docs.map(d => ({ ...(d.data() as ItemCompra), id: d.id }))),
+    e => { console.error('compras_planejadas:', e.message); cb([]); });
+};
+export const saveCompra = async (i: Partial<ItemCompra>) => {
+  const id = i.id || `cmp_${Date.now()}`;
+  await setDoc(doc(col('compras_planejadas'), id), limpar({ criadoEm: new Date().toISOString(), ...i, id }), { merge: true });
+  return id;
+};
+export const deleteCompra = (id: string) => deleteDoc(doc(col('compras_planejadas'), id));
