@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { linkWhatsApp } from '../utils/whatsapp';
 import { 
   Users, 
   Search, 
@@ -10,7 +11,8 @@ import {
   Trash2, 
   X, 
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  MessageCircle
 } from 'lucide-react';
 import { 
   subscribeResponsaveis, 
@@ -262,6 +264,18 @@ export default function Responsaveis({ onNavigateToAnimal, onOpenConsulta }: Res
                           <span className="flex items-center gap-1">
                             <Phone className="w-3 h-3 text-slate-400" />
                             {resp.telefone}
+                            {linkWhatsApp(resp.telefone) && (
+                              <a
+                                href={linkWhatsApp(resp.telefone)!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                title="Abrir conversa no WhatsApp"
+                                className="ml-1 inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                              >
+                                <MessageCircle className="w-3 h-3" /> WhatsApp
+                              </a>
+                            )}
                           </span>
                         )}
                         {resp.email && (
@@ -338,7 +352,19 @@ export default function Responsaveis({ onNavigateToAnimal, onOpenConsulta }: Res
               {selectedResp.telefone && (
                 <div className="flex items-center justify-between py-1 border-b border-slate-50">
                   <span className="text-slate-400 font-medium">Telefone:</span>
-                  <span className="font-semibold text-slate-800">{selectedResp.telefone}</span>
+                  <span className="font-semibold text-slate-800 flex items-center gap-2">
+                    {selectedResp.telefone}
+                    {linkWhatsApp(selectedResp.telefone) && (
+                      <a
+                        href={linkWhatsApp(selectedResp.telefone)!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-emerald-700"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" /> Abrir no WhatsApp
+                      </a>
+                    )}
+                  </span>
                 </div>
               )}
               {selectedResp.email && (

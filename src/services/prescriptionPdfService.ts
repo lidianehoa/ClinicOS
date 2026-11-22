@@ -1200,7 +1200,9 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
   }
 
   // Salvar bytes finais do PDF
-  const pdfBytes = await doc.save();
+  // Sem object streams: mantém a tabela xref clássica, exigida para acrescentar a assinatura
+  // como atualização incremental (os bytes originais ficam intactos no início do arquivo).
+  const pdfBytes = await doc.save({ useObjectStreams: false });
   const originalSize = pdfBytes.length;
   const originalHashSha256 = await computeSha256(pdfBytes);
   const fileName = getReceitaFileName(data.pacienteNome, data.dataEmissao, data.status === 'assinada');

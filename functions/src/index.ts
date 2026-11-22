@@ -537,3 +537,30 @@ export const cancelarReceita = onCall(
 );
 
 
+
+// ─── Integração VetZap CRM (extensão do Chrome) ─────────────────────────────
+import { gerarChaveVetzap, processarVetzapApi } from './vetzapApi';
+
+export const vetzapGerarChave = onCall({ region: 'us-central1', timeoutSeconds: 30 }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Usuário não autenticado.');
+  return gerarChaveVetzap(request.auth.uid, String(request.data?.tenantId || ''));
+});
+
+export const vetzapApi = onRequest(
+  { region: 'us-central1', memory: '256MiB', timeoutSeconds: 60, cors: false },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Use POST.' });
+      return;
+    }
+    try {
+      const resultado = await processarVetzapApi(req.headers.authorization, req.body);
+      res.status(200).json(resultado);
+    } catch (err: any) {
+      const http: Record<string, number> = { unauthenticated: 401, 'permission-denied': 403, 'invalid-argument': 400, 'not-found': 404 };
+      const status = err instanceof HttpsError ? http[err.code] || 500 : 500;
+      if (status === 500) console.error('vetzapApi:', err);
+      res.status(status).json({ error: status === 500 ? 'Erro interno.' : err.message });
+    }
+  }
+);

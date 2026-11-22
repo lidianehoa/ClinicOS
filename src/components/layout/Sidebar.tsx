@@ -1,4 +1,4 @@
-import { Activity, LayoutDashboard, Users, Upload, LogOut, Shield, DollarSign, Settings, ShieldCheck, Calendar, GitMerge, Package, Stethoscope, Sparkles, PawPrint, History, ArrowDownCircle, ArrowUpCircle, PieChart, Briefcase } from 'lucide-react';
+import { LayoutDashboard, Users, Upload, LogOut, Shield, DollarSign, Settings, ShieldCheck, Calendar, GitMerge, Package, Stethoscope, Sparkles, PawPrint, History, ArrowDownCircle, ArrowUpCircle, PieChart, Briefcase } from 'lucide-react';
 import { ActiveTab } from '../../App';
 import { AppUser } from '../../services/dataService';
 import { useTranslation } from 'react-i18next';
@@ -72,14 +72,15 @@ const Sidebar = ({ activeTab, setActiveTab, userProfile, onLogout }: SidebarProp
   return (
     <div className="w-64 flex-shrink-0 flex flex-col shadow-xl bg-teal-700 h-full">
       {/* Logo */}
-      <div className="px-4 py-5 border-b border-teal-800 flex justify-center items-center h-24 bg-teal-800 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <Activity className="w-6 h-6 text-white" />
-          <div>
-            <span className="text-white font-bold text-xl tracking-wide flex items-center">ClinicOS</span>
-            <p className="text-[10px] text-teal-200 font-bold uppercase tracking-widest text-center mt-1">Clinic Management</p>
-          </div>
+      <div className="px-4 py-4 border-b border-teal-800 bg-teal-800 flex-shrink-0">
+        <div className="bg-[#FBF7EE] rounded-2xl px-3 py-2 shadow-inner ring-1 ring-pink-300/60">
+          <img
+            src="/logo-dra-lidiane.png"
+            alt="Dra. Lidiane — Médica Veterinária"
+            className="w-full h-24 object-contain"
+          />
         </div>
+        <p className="text-[10px] text-pink-200 font-bold uppercase tracking-widest text-center mt-2">ClinicOS · Gestão Veterinária</p>
       </div>
 
       {/* Nav Content */}
@@ -207,8 +208,9 @@ const Sidebar = ({ activeTab, setActiveTab, userProfile, onLogout }: SidebarProp
           </button>
         </div>
 
-        <p className="text-teal-400 text-[10px] text-center pt-2">
-          ClinicOS © 2026
+        <p className="text-teal-300 text-[10px] text-center pt-2 leading-snug">
+          © {new Date().getFullYear()} · Tecnologia desenvolvida por<br />
+          <span className="text-pink-300 font-semibold">Lidiane Helena – DUOVET</span>
         </p>
       </div>
     </div>

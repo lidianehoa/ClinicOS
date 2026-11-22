@@ -165,6 +165,11 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
   const [copiedToken, setCopiedToken] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
 
+  // Assinatura com certificado A1 (.pfx) no navegador — arquivo e senha ficam só em memória
+  const [arquivoPfx, setArquivoPfx] = useState<File | null>(null);
+  const [senhaPfx, setSenhaPfx] = useState('');
+  const [isAssinandoA1, setIsAssinandoA1] = useState(false);
+
   // Carregar dados da clínica
   useEffect(() => {
     const cachedLogo = localStorage.getItem('clinicos_clinic_logo');
@@ -260,19 +265,21 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
   };
 
   // ── AÇÃO 1: BAIXAR PARA ASSINAR ───────────────────────────────────────────
-  const handleBaixarParaAssinar = async () => {
+  const handleBaixarParaAssinar = async (
+    opcoes: { baixar?: boolean } = {}
+  ): Promise<{ pdfBytes: Uint8Array; receitaSalva: ReceitaDigital } | null> => {
     if (isControladoSemSipeagro) {
       alert(
         'Medicamento controlado: emita a Notificação de Receita no SIPEAGRO e registre o número aqui antes de prosseguir.'
       );
-      return;
+      return null;
     }
 
     // Validar se há itens preenchidos
     const itensValidos = itens.filter(it => it.produto.trim().length > 0);
     if (itensValidos.length === 0 && !conteudo.trim()) {
       alert('Preencha os medicamentos da prescrição antes de gerar o documento.');
-      return;
+      return null;
     }
 
     setIsGeneratingPdf(true);
@@ -397,6 +404,11 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
       setReceita(receitaToSave);
       if (onSaved) onSaved(receitaToSave);
 
+      if (opcoes.baixar === false) {
+        setIsGeneratingPdf(false);
+        return { pdfBytes, receitaSalva: receitaToSave };
+      }
+
       // Disparar download do arquivo PDF original para assinatura
       const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
       const downloadUrl = URL.createObjectURL(blob);
@@ -409,10 +421,71 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
       URL.revokeObjectURL(downloadUrl);
 
       setIsGeneratingPdf(false);
+      return { pdfBytes, receitaSalva: receitaToSave };
     } catch (err: any) {
       console.error('Erro ao gerar PDF para assinatura:', err);
       setIsGeneratingPdf(false);
       setValidationError('Erro ao gerar o arquivo PDF: ' + (err.message || 'Tente novamente.'));
+      return null;
+    }
+  };
+
+  // ── AÇÃO 1-B: ASSINAR COM CERTIFICADO A1 NO NAVEGADOR ─────────────────────
+  const handleAssinarComA1 = async () => {
+    if (!arquivoPfx || !senhaPfx) {
+      setValidationError('Escolha o arquivo do certificado (.pfx ou .p12) e digite a senha.');
+      return;
+    }
+    setIsAssinandoA1(true);
+    setValidationError(null);
+    setValidationSuccess(null);
+    try {
+      // Gera (ou regera) o PDF final e grava o hash dele na receita, sem baixar
+      const preparado = await handleBaixarParaAssinar({ baixar: false });
+      if (!preparado) return;
+
+      // Biblioteca de assinatura carregada só quando necessária (não pesa no app)
+      const { assinarPdfComA1, bytesParaBase64 } = await import('../services/assinaturaA1');
+      const pfxBytes = await arquivoPfx.arrayBuffer();
+      const { pdfAssinado } = await assinarPdfComA1(preparado.pdfBytes, pfxBytes, senhaPfx, {
+        cpfEsperado: userProfile?.cpf,
+        motivo: 'Receita veterinária',
+        local: clinicConfig?.address?.cidade ? `${clinicConfig.address.cidade}${clinicConfig.address.estado ? '/' + clinicConfig.address.estado : ''}` : 'Brasil',
+      });
+      setSenhaPfx('');
+
+      const validarPdfAssinadoFn = httpsCallable<
+        { tenantId: string; receitaId: string; pdfBase64: string },
+        { success: boolean; assinatura: any; pdfUrl: string }
+      >(functions, 'validarPdfAssinado');
+
+      const rec = preparado.receitaSalva;
+      const response = await validarPdfAssinadoFn({
+        tenantId: rec.tenantId || tenantId,
+        receitaId: rec.id,
+        pdfBase64: bytesParaBase64(pdfAssinado),
+      });
+
+      if (response.data.success) {
+        setValidationSuccess('Receita assinada com o seu certificado A1 e validada com sucesso!');
+        const updatedRec: ReceitaDigital = {
+          ...rec,
+          status: 'assinada',
+          assinatura: response.data.assinatura,
+          pdfAssinadoUrl: response.data.pdfUrl,
+          assinadoEm: response.data.assinatura.em,
+          atualizadoEm: new Date().toISOString(),
+        };
+        setReceita(updatedRec);
+        if (onSaved) onSaved(updatedRec);
+      }
+    } catch (err: any) {
+      console.error('Erro na assinatura com A1:', err);
+      let msg = err?.message || 'Falha ao assinar com o certificado.';
+      msg = msg.replace(/^[a-z0-9_-]+:\s*/i, '');
+      setValidationError(msg);
+    } finally {
+      setIsAssinandoA1(false);
     }
   };
 
@@ -965,6 +1038,66 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
             </div>
           </div>
 
+          {/* Seção 4-B: ASSINAR COM CERTIFICADO A1 (arquivo .pfx) NO NAVEGADOR */}
+          {(currentStatus === 'rascunho' || currentStatus === 'aguardando_assinatura') && (
+            <div className="rounded-2xl border-2 border-pink-300 bg-pink-50/50 p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Assinar agora com o certificado A1 (.pfx)</h3>
+                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                    A assinatura é feita <strong>no seu computador</strong>: o arquivo do certificado e a senha não são enviados nem
+                    guardados. O ClinicOS gera o PDF final, assina e valida em um passo só.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px_auto] gap-3 items-center">
+                <input
+                  type="file"
+                  accept=".pfx,.p12,application/x-pkcs12"
+                  onChange={e => {
+                    setArquivoPfx(e.target.files?.[0] || null);
+                    setValidationError(null);
+                  }}
+                  className="text-xs file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-teal-700 file:text-white hover:file:bg-teal-800 cursor-pointer text-slate-600"
+                />
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder="Senha do certificado"
+                  value={senhaPfx}
+                  onChange={e => setSenhaPfx(e.target.value)}
+                  className="py-2.5 px-3 rounded-xl border border-slate-200 bg-white text-xs focus:ring-2 focus:ring-teal-500/20"
+                />
+                <button
+                  type="button"
+                  disabled={!arquivoPfx || !senhaPfx || isAssinandoA1 || isGeneratingPdf}
+                  onClick={handleAssinarComA1}
+                  className="py-2.5 px-5 bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAssinandoA1 ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                      Assinando...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      Assinar e validar
+                    </>
+                  )}
+                </button>
+              </div>
+              {currentStatus === 'aguardando_assinatura' && (
+                <p className="text-[11px] text-slate-500">
+                  Atenção: assinar por aqui gera o PDF de novo. Um PDF baixado antes para assinar fora deixa de valer.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Seção 5: UPLOAD DO PDF ASSINADO (Aguardando Assinatura) */}
           {currentStatus === 'aguardando_assinatura' && (
             <div className="rounded-2xl border-2 border-dashed border-teal-500 bg-teal-50/40 p-5 space-y-4 animate-in fade-in">
@@ -1018,7 +1151,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                 <span>Perdeu o arquivo gerado?</span>
                 <button
                   type="button"
-                  onClick={handleBaixarParaAssinar}
+                  onClick={() => handleBaixarParaAssinar()}
                   className="text-teal-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" /> Baixar novamente PDF original
@@ -1193,7 +1326,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
               <button
                 type="button"
                 disabled={isGeneratingPdf || isControladoSemSipeagro}
-                onClick={handleBaixarParaAssinar}
+                onClick={() => handleBaixarParaAssinar()}
                 className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-md shadow-teal-600/20 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isGeneratingPdf ? (

@@ -169,8 +169,8 @@ const Auth = () => {
       <div className="w-full max-w-md px-6 relative z-10">
         <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-[40px] p-8 md:p-10 shadow-2xl shadow-black/20">
           <div className="flex flex-col items-center mb-8 text-center">
-            <div className="w-12 h-12 bg-clinic-500/20 border border-clinic-400/30 rounded-2xl flex items-center justify-center mb-3">
-              <Building2 className="w-6 h-6 text-clinic-300" />
+            <div className="w-56 bg-[#FBF7EE] rounded-3xl px-4 py-3 mb-4 shadow-lg ring-1 ring-pink-300/60">
+              <img src="/logo-dra-lidiane.png" alt="Dra. Lidiane — Médica Veterinária" className="w-full h-auto object-contain" />
             </div>
             <h1 className="text-2xl md:text-3xl font-bold text-white mb-1.5">
               {mode === 'login' && t('login_title', 'Acessar ClinicOS')}
@@ -339,6 +339,10 @@ const Auth = () => {
             )}
           </div>
         </div>
+        <p className="text-center text-[11px] text-white/50 mt-6">
+          © {new Date().getFullYear()} · Tecnologia desenvolvida por{' '}
+          <span className="text-pink-300 font-semibold">Lidiane Helena – DUOVET</span>
+        </p>
       </div>
     </div>
   );

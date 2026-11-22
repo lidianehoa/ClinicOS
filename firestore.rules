@@ -140,6 +140,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Chaves da integração VetZap (só o hash): acesso exclusivo das Cloud Functions
+    match /integracoes_vetzap/{hash} {
+      allow read, write: if false;
+    }
+
     // Auditoria e Rate Limiting são estritamente restritos ao Admin SDK (Cloud Functions)
     match /auditoria_farmacia/{id} {
       allow read, write: if false;

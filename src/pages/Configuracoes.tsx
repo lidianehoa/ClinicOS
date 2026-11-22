@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import AlterarSenhaCard from '../components/AlterarSenhaCard';
+import VetzapIntegracaoCard from '../components/VetzapIntegracaoCard';
 import { 
   Search, 
   Plus, 
@@ -1483,6 +1484,8 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
         <h2 className="text-2xl font-bold text-slate-800">Integrations</h2>
         <p className="text-slate-500 mt-1">Configure integrações de terceiros.</p>
       </div>
+
+      <VetzapIntegracaoCard />
 
       <form onSubmit={handleSaveIntegrations} className="space-y-6">
         <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm space-y-6">
