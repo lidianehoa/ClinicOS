@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import AlterarSenhaCard from '../components/AlterarSenhaCard';
 import { 
   Search, 
   Plus, 
@@ -210,7 +211,8 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
         registroMapa: registroMapa ? registroMapa.trim() : '',
         cpfPrescritorModo: cpfPrescritorModo || 'ocultar',
       };
-      if (userProfile.role === 'veterinario') {
+      // Administrador também pode ser veterinário prescritor (CRMV e CPF da assinatura)
+      if (userProfile.role === 'veterinario' || userProfile.role === 'administrador') {
         profileUpdates.crmv = crmv;
       } else {
         profileUpdates.crmv = null;
@@ -1173,7 +1175,7 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm text-slate-700 focus:ring-2 focus:ring-primary/20"
               />
             </div>
-            {userProfile?.role === 'veterinario' && (
+            {(userProfile?.role === 'veterinario' || userProfile?.role === 'administrador') && (
               <>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Registro Profissional (CRMV)</label>
@@ -1303,6 +1305,9 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
           </div>
         </div>
       )}
+
+      {/* Troca de senha */}
+      <AlterarSenhaCard />
     </div>
   );
 

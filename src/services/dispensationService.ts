@@ -36,8 +36,10 @@ export function generateDispensationToken(dataReferencia: Date = new Date()): st
 
   let codigo = '';
   // Seis caracteres seguros do alfabeto
+  // Gerador criptográfico (Math.random é previsível). 256 é múltiplo de 32, então não há viés.
+  const aleatorios = crypto.getRandomValues(new Uint8Array(6));
   for (let i = 0; i < 6; i++) {
-    const idx = Math.floor(Math.random() * ALFABETO_DISPENSACAO.length);
+    const idx = aleatorios[i] % ALFABETO_DISPENSACAO.length;
     codigo += ALFABETO_DISPENSACAO[idx];
   }
 

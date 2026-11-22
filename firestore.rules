@@ -47,16 +47,49 @@ service cloud.firestore {
     match /clinicas/{tenantId}/receitas/{receitaId} {
       allow read: if isMemberOfTenant(tenantId);
       allow delete: if isMemberOfTenant(tenantId) && resource.data.status != 'assinada';
-      allow create: if isMemberOfTenant(tenantId);
-      // UPDATE: se a receita já estiver assinada, cliente só pode alterar status/substituicao
+
+      // O cliente nunca marca uma receita como assinada nem grava dados de assinatura:
+      // isso é feito só pela Cloud Function validarPdfAssinado (Admin SDK).
+      allow create: if isMemberOfTenant(tenantId)
+        && request.resource.data.get('status', 'rascunho') != 'assinada'
+        && semDadosDeAssinatura(request.resource.data);
+
       allow update: if isMemberOfTenant(tenantId) && (
-        resource.data.status != 'assinada' ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'substituidaPorId', 'atualizadoEm'])
+        // Ainda não assinada: pode editar, mas não pode se autodeclarar assinada
+        (resource.data.status != 'assinada'
+          && request.resource.data.get('status', '') != 'assinada'
+          && semDadosDeAssinatura(request.resource.data))
+        ||
+        // Já assinada: conteúdo travado; só pode virar substituída ou cancelada
+        (resource.data.status == 'assinada'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusDispensacao', 'substituidaPorId', 'substituidaPorReceitaId',
+                                                                   'motivoCancelamento', 'canceladoEm', 'canceladoPor', 'atualizadoEm'])
+          && request.resource.data.status in ['assinada', 'substituida', 'cancelada'])
       );
+
+      // Subcoleções (ex.: dispensacoes): leitura pela clínica, escrita só pelas Cloud Functions
+      match /{sub=**} {
+        allow read: if isMemberOfTenant(tenantId);
+        allow write: if false;
+      }
+    }
+
+    function semDadosDeAssinatura(d) {
+      return d.get('assinatura', null) == null
+        && d.get('pdfAssinadoUrl', null) == null
+        && d.get('assinadoEm', null) == null;
     }
 
     // Demais coleções do tenant
-    match /clinicas/{tenantId}/{document=**} {
+    // (receitas e casos_clinicos têm regras próprias acima; sem esta exclusão,
+    //  esta regra genérica liberaria tudo e anularia as travas, porque regras se somam)
+    match /clinicas/{tenantId}/{colecao}/{document=**} {
+      allow read, write: if isMemberOfTenant(tenantId)
+        && !(colecao in ['receitas', 'casos_clinicos']);
+    }
+
+    // Subcoleções dos casos clínicos continuam liberadas para a clínica
+    match /clinicas/{tenantId}/casos_clinicos/{casoId}/{sub=**} {
       allow read, write: if isMemberOfTenant(tenantId);
     }
 
@@ -81,15 +114,30 @@ service cloud.firestore {
     // Não contém dados sensíveis (tutor/animal omitidos conforme LGPD).
     // Escrita restrita a usuários autenticados / Cloud Functions.
     match /verificacao_receitas/{codigo} {
-      allow read: if true;
-      allow write: if isAuthenticated();
+      allow get: if true;       // conferência por código, sem login
+      allow list: if false;     // ninguém lista todos os códigos
+      allow create: if isMemberOfTenant(request.resource.data.tenantId)
+        && request.resource.data.get('status', '') != 'assinada'
+        && request.resource.data.get('pdfUrl', null) == null;
+      allow update: if isMemberOfTenant(resource.data.tenantId)
+        && request.resource.data.tenantId == resource.data.tenantId
+        && request.resource.data.receitaId == resource.data.receitaId
+        // status "assinada" e o link do PDF só vêm da Cloud Function
+        && (request.resource.data.get('status', '') != 'assinada' || resource.data.get('status', '') == 'assinada')
+        && request.resource.data.get('pdfUrl', null) == resource.data.get('pdfUrl', null);
+      allow delete: if false;
     }
 
     // ── Portal da Farmácia & Tokens de Dispensação ─────────────────────────────
     // O público acessa exclusivamente pelas Cloud Functions (Admin SDK).
     // Usuários autenticados (veterinários/staff) podem indexar tokens ao emitir receitas.
     match /tokens_receita/{token} {
-      allow read, write: if isAuthenticated();
+      allow read: if false;     // consulta só pela Cloud Function farmaciaConsultar
+      allow create: if isMemberOfTenant(request.resource.data.tenantId);
+      allow update: if isMemberOfTenant(resource.data.tenantId)
+        && request.resource.data.tenantId == resource.data.tenantId
+        && request.resource.data.receitaId == resource.data.receitaId;
+      allow delete: if false;
     }
 
     // Auditoria e Rate Limiting são estritamente restritos ao Admin SDK (Cloud Functions)

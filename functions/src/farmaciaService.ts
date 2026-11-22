@@ -59,7 +59,7 @@ export async function checkRateLimit(ip: string = 'unknown_ip'): Promise<void> {
         if (data.count >= maxRequests) {
           throw new HttpsError(
             'resource-exhausted',
-            'Limite de consultas excedido. Aguarde 1 minuto para tentar novamente.'
+            'Muitas tentativas, aguarde 1 minuto.'
           );
         }
         transaction.update(rateLimitRef, {
@@ -70,7 +70,9 @@ export async function checkRateLimit(ip: string = 'unknown_ip'): Promise<void> {
     });
   } catch (err: any) {
     if (err instanceof HttpsError) throw err;
-    console.warn('Erro ao verificar rate limit (permitindo requisição com log):', err);
+    // Falha fechada: se não for possível conferir o limite, a consulta é recusada.
+    console.error('Erro ao verificar rate limit (requisição recusada):', err);
+    throw new HttpsError('unavailable', 'Serviço temporariamente indisponível. Tente novamente em instantes.');
   }
 }
 

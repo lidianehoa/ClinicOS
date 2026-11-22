@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // PDF oficial da receita assinada: gravado só pela Cloud Function validarPdfAssinado.
+    // Leitura aberta para a farmácia conferir pelo link (o caminho tem o ID da receita).
+    match /clinicas/{tenantId}/receitas/{receitaId}/assinada.pdf {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Demais arquivos das receitas: ninguém grava pelo navegador
+    match /clinicas/{tenantId}/receitas/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Todo o resto (logos, exames, importações): só usuário logado
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
