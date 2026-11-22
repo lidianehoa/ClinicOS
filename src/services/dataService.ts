@@ -2887,13 +2887,13 @@ export const getResponsavel = async (id: string): Promise<Responsavel | null> =>
 // MÓDULO FINANCEIRO: Contas a Receber / Contas a Pagar / Categorias
 // ─────────────────────────────────────────────────────────────────────────────
 
-const contasReceberCol = (tenantId: string = getActiveTenantId()) =>
+export const contasReceberCol = (tenantId: string = getActiveTenantId()) =>
   TENANT_COL('contas_receber', tenantId);
 
-const contasPagarCol = (tenantId: string = getActiveTenantId()) =>
+export const contasPagarCol = (tenantId: string = getActiveTenantId()) =>
   TENANT_COL('contas_pagar', tenantId);
 
-const categoriasFinanceirasCol = (tenantId: string = getActiveTenantId()) =>
+export const categoriasFinanceirasCol = (tenantId: string = getActiveTenantId()) =>
   TENANT_COL('categorias_financeiras', tenantId);
 
 export interface ContaReceber {
