@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import {
   Upload, FileType, CheckCircle, AlertCircle, Users,
-  ShoppingCart, User, Package, BarChart2
+  ShoppingCart, User, Package, BarChart2, FileText
 } from 'lucide-react';
 import Papa from 'papaparse';
+import ImportarProntuarios from '../components/ImportarProntuarios';
 import { storage } from '../services/firebase';
 import { ref, uploadBytes } from 'firebase/storage';
 import { saveDailyFlow, batchSaveCustomers, batchSaveProdutos, toCustomerId, toLocalDateString, canDelete } from '../services/dataService';
@@ -15,7 +16,7 @@ interface ImportadorDadosProps {
   userProfile: AppUser | null;
 }
 
-type TabType = 'clientes' | 'vendas' | 'produtos';
+type TabType = 'clientes' | 'vendas' | 'produtos' | 'prontuarios';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -529,6 +530,7 @@ const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps)
     { key: 'clientes', label: 'Importar Clientes', icon: <User className="w-4 h-4" /> },
     { key: 'vendas', label: 'Importar Vendas', icon: <ShoppingCart className="w-4 h-4" /> },
     { key: 'produtos', label: 'Produtos & Serviços', icon: <Package className="w-4 h-4" /> },
+    { key: 'prontuarios', label: 'Prontuários', icon: <FileText className="w-4 h-4" /> },
   ];
 
   return (
@@ -751,6 +753,8 @@ const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps)
       )}
 
       {/* ── ABA PRODUTOS ── */}
+      {activeTab === 'prontuarios' && <ImportarProntuarios />}
+
       {activeTab === 'produtos' && (
         <div className="space-y-5">
           <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-5 py-3 text-sm text-emerald-700">
