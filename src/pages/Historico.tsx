@@ -37,6 +37,15 @@ import {
   type AppUser
 } from '../services/dataService';
 
+/** Texto curto do atendimento Petlove para o histórico */
+const textoPetlove = (a?: { numero?: string; coparticipacao?: number; procedimento?: string }) =>
+  a?.numero
+    ? ` Petlove: atendimento nº ${a.numero}${a.procedimento ? ` (${a.procedimento})` : ''}${
+        a.coparticipacao != null ? `, coparticipação R$ ${Number(a.coparticipacao).toFixed(2).replace('.', ',')}` : ''
+      }.`
+    : '';
+
+
 interface HistoricoProps {
   userProfile?: AppUser | null;
 }
@@ -160,10 +169,10 @@ export default function Historico({ userProfile: _userProfile }: HistoricoProps)
         tutorNome: t?.nomeCompleto || 'Tutor Responsável',
         tutorId: t?.id,
         dataHora: c.criadoEm || `${c.data}T12:00:00Z`,
-        resumo: `Sintomas: ${c.sintomasPrincipais || 'Sem queixas agudas'}.${vitaisStr} ${alterados.length > 0 ? `Sistemas com alteração: ${alterados.join(', ')}.` : 'Exame físico sem alterações.'} Conduta: ${c.conduta || 'Rotina.'}`,
+        resumo: `Sintomas: ${c.sintomasPrincipais || 'Sem queixas agudas'}.${vitaisStr} ${alterados.length > 0 ? `Sistemas com alteração: ${alterados.join(', ')}.` : 'Exame físico sem alterações.'} Conduta: ${c.conduta || 'Rotina.'}${textoPetlove(c.atendimentoPetlove)}`,
         veterinario: c.veterinarioNome,
         valor: c.valorTotal || c.valorConsulta,
-        tags: c.isDomiciliar ? ['Domiciliar', 'Presencial'] : ['Ambulatorial'],
+        tags: [...(c.isDomiciliar ? ['Domiciliar', 'Presencial'] : ['Ambulatorial']), ...(c.atendimentoPetlove?.numero ? ['Petlove'] : [])],
         raw: c
       });
     });

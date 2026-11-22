@@ -71,6 +71,15 @@ import ChecklistResiduosModal from '../components/ChecklistResiduosModal';
 import EvolucaoCasoModule from '../components/EvolucaoCasoModule';
 import AnamneseGuiadaModal from '../components/AnamneseGuiadaModal';
 
+/** Texto curto do atendimento Petlove para o histórico */
+const textoPetlove = (a?: { numero?: string; coparticipacao?: number; procedimento?: string }) =>
+  a?.numero
+    ? ` Petlove: atendimento nº ${a.numero}${a.procedimento ? ` (${a.procedimento})` : ''}${
+        a.coparticipacao != null ? `, coparticipação R$ ${Number(a.coparticipacao).toFixed(2).replace('.', ',')}` : ''
+      }.`
+    : '';
+
+
 interface ConsultaProps {
   selectedPatientId?: string | null;
   onSelectPatient?: (patientId: string) => void;
@@ -589,7 +598,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
         tipo: 'consulta',
         titulo: 'Consulta Clínica & Anamnese',
         data: c.data || c.criadoEm,
-        detalhes: `Sintomas: ${c.sintomasPrincipais || 'Não descritos'}.${vitaisStr} ${alterados.length > 0 ? `Sistemas alterados: ${alterados.join(', ')}.` : 'Exame físico sem alterações.'} Conduta: ${c.conduta || 'Rotina.'}`,
+        detalhes: `Sintomas: ${c.sintomasPrincipais || 'Não descritos'}.${vitaisStr} ${alterados.length > 0 ? `Sistemas alterados: ${alterados.join(', ')}.` : 'Exame físico sem alterações.'} Conduta: ${c.conduta || 'Rotina.'}${textoPetlove(c.atendimentoPetlove)}`,
         responsavel: c.veterinarioNome
       });
     });

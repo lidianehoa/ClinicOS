@@ -52,7 +52,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
     obito: false,
     dataObito: '',
     causaObito: '',
-    convenio: 'particular' as 'particular' | 'petlove'
+    convenio: 'particular' as 'particular' | 'petlove',
+    dataNascimento: '',
+    microchip: '',
+    planoPetlove: ''
   });
   const [filtroConvenio, setFiltroConvenio] = useState<'todos' | 'particular' | 'petlove'>('todos');
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'ativos' | 'obitos'>('todos');
@@ -121,7 +124,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       obito: false,
       dataObito: '',
       causaObito: '',
-      convenio: 'particular'
+      convenio: 'particular',
+      dataNascimento: '',
+      microchip: '',
+      planoPetlove: ''
     });
     setIsModalOpen(true);
   };
@@ -142,7 +148,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       obito: !!p.obito,
       dataObito: p.dataObito || '',
       causaObito: p.causaObito || '',
-      convenio: p.convenio || 'particular'
+      convenio: p.convenio || 'particular',
+      dataNascimento: p.dataNascimento || '',
+      microchip: p.microchip || '',
+      planoPetlove: p.planoPetlove || ''
     });
     setIsModalOpen(true);
   };
@@ -173,7 +182,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
         obito: formData.obito,
         dataObito: formData.dataObito,
         causaObito: formData.causaObito.trim(),
-        convenio: formData.convenio
+        convenio: formData.convenio,
+        dataNascimento: formData.dataNascimento,
+        microchip: formData.microchip.trim(),
+        planoPetlove: formData.convenio === 'petlove' ? formData.planoPetlove.trim() : ''
       });
       setIsModalOpen(false);
     } catch (err) {
@@ -364,8 +376,11 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
                               : 'bg-pink-50 text-pink-700 border border-pink-200'
                           }`}
                         >
-                          {p.convenio === 'petlove' ? 'Petlove Saúde' : 'Particular'}
+                          {p.convenio === 'petlove' ? (p.planoPetlove || 'Petlove Saúde') : 'Particular'}
                         </span>
+                        {p.microchip && (
+                          <p className="text-[10px] text-slate-400 font-mono mt-0.5">Chip {p.microchip}</p>
+                        )}
                         {p.obito && p.causaObito && (
                           <p className="text-[11px] text-slate-500 italic mt-0.5">{p.causaObito}</p>
                         )}
@@ -609,6 +624,40 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Data de nascimento</label>
+                  <input
+                    type="date"
+                    value={formData.dataNascimento}
+                    onChange={e => setFormData({ ...formData, dataNascimento: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Nº do microchip</label>
+                  <input
+                    type="text"
+                    value={formData.microchip}
+                    onChange={e => setFormData({ ...formData, microchip: e.target.value })}
+                    placeholder="15 dígitos"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:ring-2 focus:ring-teal-500 outline-none"
+                  />
+                </div>
+                {formData.convenio === 'petlove' && (
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Plano Petlove</label>
+                    <input
+                      type="text"
+                      value={formData.planoPetlove}
+                      onChange={e => setFormData({ ...formData, planoPetlove: e.target.value })}
+                      placeholder="Ex.: Petlove Tranquilo"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="rounded-xl border border-slate-200 p-3 space-y-3">

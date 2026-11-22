@@ -2452,6 +2452,20 @@ export interface Paciente {
   causaObito?: string;
   /** Forma de atendimento: particular ou plano de saúde pet */
   convenio?: 'particular' | 'petlove';
+  dataNascimento?: string;   // AAAA-MM-DD
+  microchip?: string;
+  planoPetlove?: string;     // ex.: Petlove Tranquilo
+}
+
+/** Dados do atendimento registrado na Central de Saúde Petlove */
+export interface AtendimentoPetlove {
+  numero: string;
+  dataHora?: string;
+  procedimento?: string;
+  coparticipacao?: number;
+  status?: string;
+  avaliacao?: number;
+  comentarioTutor?: string;
 }
 
 export interface ExameFisicoItem {
@@ -2559,6 +2573,7 @@ export interface ConsultaAtendimento {
   neurologicoBasico?: NeurologicoBasico;
   dorComportamento?: DorEComportamento;
   checklistFinalizacao?: ChecklistFinalizacao;
+  atendimentoPetlove?: AtendimentoPetlove;
 }
 
 export const subscribeResponsaveis = (callback: (list: Responsavel[]) => void): (() => void) => {
@@ -2634,6 +2649,9 @@ export const savePaciente = async (paciente: Partial<Paciente> & { id?: string }
   if (paciente.convenio !== undefined) {
     data.convenio = paciente.convenio;
   }
+  if (paciente.dataNascimento !== undefined) data.dataNascimento = paciente.dataNascimento;
+  if (paciente.microchip !== undefined) data.microchip = paciente.microchip;
+  if (paciente.planoPetlove !== undefined) data.planoPetlove = paciente.planoPetlove;
   if (paciente.obito !== undefined) {
     data.obito = !!paciente.obito;
     data.dataObito = paciente.obito ? paciente.dataObito || '' : '';
