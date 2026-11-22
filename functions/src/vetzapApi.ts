@@ -165,7 +165,10 @@ async function statusPorTelefone(tenantId: string, telefones: string[]) {
   const hojeIso = hoje.toISOString().slice(0, 10);
   const dias = (iso: string) => (hoje.getTime() - new Date(iso).getTime()) / 86400000;
 
-  const resultados: Record<string, { etapa: string | null; responsavelId?: string; proximaData?: string }> = {};
+  const resultados: Record<
+    string,
+    { etapa: string | null; responsavelId?: string; proximaData?: string; petlove?: boolean; pets?: string[] }
+  > = {};
 
   for (const tel of telefones.slice(0, 500)) {
     const k = chaveTelefone(tel);
@@ -174,6 +177,19 @@ async function statusPorTelefone(tenantId: string, telefones: string[]) {
     if (!idsCliente.length) {
       resultados[tel] = { etapa: null };
       continue;
+    }
+
+    // Pets do tutor e convênio (Particular x Petlove)
+    let petlove = false;
+    const pets: string[] = [];
+    for (const r of resp) {
+      const ps = await clinica.collection('pacientes').where('tutorId', '==', r.id).get();
+      ps.forEach(p => {
+        const d = p.data();
+        if (d.obito) return;
+        if (d.nome) pets.push(String(d.nome));
+        if (d.convenio === 'petlove') petlove = true;
+      });
     }
 
     // Consultas realizadas (do tutor)
@@ -208,7 +224,13 @@ async function statusPorTelefone(tenantId: string, telefones: string[]) {
     else if (ultimaConsulta && dias(ultimaConsulta) <= 60) etapa = 'Acompanhamento pós-tratamento';
     else if (ultimaConsulta) etapa = 'Cliente ativo';
 
-    resultados[tel] = { etapa, responsavelId: resp[0]?.id, ...(proxima ? { proximaData: proxima } : {}) };
+    resultados[tel] = {
+      etapa,
+      responsavelId: resp[0]?.id,
+      ...(proxima ? { proximaData: proxima } : {}),
+      ...(petlove ? { petlove: true } : {}),
+      ...(pets.length ? { pets } : {}),
+    };
   }
   return { resultados };
 }
