@@ -2450,6 +2450,8 @@ export interface Paciente {
   obito?: boolean;
   dataObito?: string;   // AAAA-MM-DD
   causaObito?: string;
+  /** Forma de atendimento: particular ou plano de saúde pet */
+  convenio?: 'particular' | 'petlove';
 }
 
 export interface ExameFisicoItem {
@@ -2629,6 +2631,9 @@ export const savePaciente = async (paciente: Partial<Paciente> & { id?: string }
     criadoEm: paciente.criadoEm || new Date().toISOString(),
     tenantId: APP_ID
   };
+  if (paciente.convenio !== undefined) {
+    data.convenio = paciente.convenio;
+  }
   if (paciente.obito !== undefined) {
     data.obito = !!paciente.obito;
     data.dataObito = paciente.obito ? paciente.dataObito || '' : '';

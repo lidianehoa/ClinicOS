@@ -51,8 +51,10 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
     tutorId: '',
     obito: false,
     dataObito: '',
-    causaObito: ''
+    causaObito: '',
+    convenio: 'particular' as 'particular' | 'petlove'
   });
+  const [filtroConvenio, setFiltroConvenio] = useState<'todos' | 'particular' | 'petlove'>('todos');
   const [filtroStatus, setFiltroStatus] = useState<'todos' | 'ativos' | 'obitos'>('todos');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -91,13 +93,17 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       const matchesStatus =
         filtroStatus === 'todos' || (filtroStatus === 'obitos' ? !!p.obito : !p.obito);
 
-      return matchesText && matchesEspecie && matchesStatus;
+      const matchesConvenio =
+        filtroConvenio === 'todos' || (p.convenio || 'particular') === filtroConvenio;
+
+      return matchesText && matchesEspecie && matchesStatus && matchesConvenio;
     })
     // Pacientes que vieram a óbito ficam no fim da lista
     .sort((a, b) => Number(!!a.obito) - Number(!!b.obito));
-  }, [pacientes, search, filterEspecie, filtroStatus, responsaveisMap]);
+  }, [pacientes, search, filterEspecie, filtroStatus, filtroConvenio, responsaveisMap]);
 
   const totalObitos = useMemo(() => pacientes.filter(p => p.obito).length, [pacientes]);
+  const totalPetlove = useMemo(() => pacientes.filter(p => p.convenio === 'petlove').length, [pacientes]);
   const fmtData = (iso?: string) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '');
 
   const openNewModal = () => {
@@ -114,7 +120,8 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       tutorId: responsaveis.length > 0 ? responsaveis[0].id : '',
       obito: false,
       dataObito: '',
-      causaObito: ''
+      causaObito: '',
+      convenio: 'particular'
     });
     setIsModalOpen(true);
   };
@@ -134,7 +141,8 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
       tutorId: p.tutorId,
       obito: !!p.obito,
       dataObito: p.dataObito || '',
-      causaObito: p.causaObito || ''
+      causaObito: p.causaObito || '',
+      convenio: p.convenio || 'particular'
     });
     setIsModalOpen(true);
   };
@@ -164,7 +172,8 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
         criadoEm: selectedPaciente?.criadoEm || new Date().toISOString(),
         obito: formData.obito,
         dataObito: formData.dataObito,
-        causaObito: formData.causaObito.trim()
+        causaObito: formData.causaObito.trim(),
+        convenio: formData.convenio
       });
       setIsModalOpen(false);
     } catch (err) {
@@ -267,6 +276,20 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
               {rotulo}
             </button>
           ))}
+          <span className="w-px h-5 bg-slate-200 mx-1" />
+          {([['todos', 'Particular + Petlove'], ['particular', 'Particular'], ['petlove', `Petlove (${totalPetlove})`]] as const).map(([k, rotulo]) => (
+            <button
+              key={k}
+              onClick={() => setFiltroConvenio(k)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+                filtroConvenio === k
+                  ? k === 'petlove' ? 'bg-violet-600 text-white shadow-sm' : 'bg-pink-600 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {rotulo}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -334,6 +357,15 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
                         <p className="text-xs text-slate-500 font-medium">
                           {p.especie} • {p.raca || 'SRD'}
                         </p>
+                        <span
+                          className={`inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                            p.convenio === 'petlove'
+                              ? 'bg-violet-100 text-violet-700 border border-violet-200'
+                              : 'bg-pink-50 text-pink-700 border border-pink-200'
+                          }`}
+                        >
+                          {p.convenio === 'petlove' ? 'Petlove Saúde' : 'Particular'}
+                        </span>
                         {p.obito && p.causaObito && (
                           <p className="text-[11px] text-slate-500 italic mt-0.5">{p.causaObito}</p>
                         )}
@@ -556,6 +588,26 @@ export default function Animais({ onOpenConsulta, onNavigateToResponsavel }: Ani
                     placeholder="Ex: 12.5"
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Forma de atendimento</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([['particular', 'Particular'], ['petlove', 'Petlove Saúde']] as const).map(([k, rotulo]) => (
+                    <button
+                      type="button"
+                      key={k}
+                      onClick={() => setFormData({ ...formData, convenio: k })}
+                      className={`py-2.5 rounded-xl text-sm font-bold border transition-colors ${
+                        formData.convenio === k
+                          ? k === 'petlove' ? 'bg-violet-600 text-white border-violet-600' : 'bg-pink-600 text-white border-pink-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {rotulo}
+                    </button>
+                  ))}
                 </div>
               </div>
 
