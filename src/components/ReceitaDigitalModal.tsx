@@ -888,7 +888,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                 <label className="text-[11px] font-bold text-indigo-900 uppercase block mb-1">
                   Número da Notificação SIPEAGRO / MAPA {subtipo === 'controle_especial' ? '*' : '(Opcional)'}
                 </label>
-                <input
+                <input autoComplete="off"
                   type="text"
                   disabled={isLocked}
                   value={numeroNotificacaoSipeagro}
@@ -941,7 +941,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
                     <div className="sm:col-span-2">
-                      <input
+                      <input autoComplete="off"
                         type="text"
                         disabled={isLocked}
                         placeholder="Nome do produto ou fórmula *"
@@ -951,7 +951,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                       />
                     </div>
                     <div>
-                      <input
+                      <input autoComplete="off"
                         type="text"
                         disabled={isLocked}
                         placeholder="Concentração (ex: 500mg)"
@@ -961,7 +961,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <input
+                      <input autoComplete="off"
                         type="number"
                         min={1}
                         disabled={isLocked}
@@ -970,7 +970,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                         onChange={e => handleUpdateItem(idx, { quantidadePrescrita: Number(e.target.value) || 1 })}
                         className="w-16 px-2.5 py-2 rounded-xl border border-slate-200 bg-white font-bold text-center focus:ring-2 focus:ring-teal-500/20 disabled:bg-slate-100"
                       />
-                      <input
+                      <input autoComplete="off"
                         type="text"
                         disabled={isLocked}
                         placeholder="Unidade"
@@ -982,7 +982,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                   </div>
 
                   <div>
-                    <input
+                    <input autoComplete="off"
                       type="text"
                       disabled={isLocked}
                       placeholder="Quantidade por extenso (ex: 1 (uma) caixa com 10 comprimidos)"
@@ -1054,7 +1054,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px_auto] gap-3 items-center">
-                <input
+                <input autoComplete="off"
                   type="file"
                   accept=".pfx,.p12,application/x-pkcs12"
                   onChange={e => {
@@ -1116,7 +1116,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
-                <input
+                <input autoComplete="off"
                   type="file"
                   accept="application/pdf"
                   onChange={e => {

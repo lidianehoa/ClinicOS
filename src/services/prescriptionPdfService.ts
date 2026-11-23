@@ -1,4 +1,25 @@
-import { PDFDocument, rgb, StandardFonts, PDFString } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, PDFString, PDFPage, PDFFont } from 'pdf-lib';
+
+// As fontes padrão do PDF (Helvetica/Courier) só aceitam o alfabeto WinAnsi.
+// Qualquer outro caractere (✓, →, ≥, emoji…) quebrava a geração do PDF.
+// Troca os mais comuns por equivalentes e remove o resto, em todo texto desenhado ou medido.
+const WINANSI_EXTRA = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ');
+const TROCAS: Record<string, string> = { '✓': '', '✔': '', '✗': 'x', '→': '->', '←': '<-', '≥': '>=', '≤': '<=', '≈': '~', '\u2009': ' ', '\u202F': ' ', '\u00A0': ' ', '\t': '  ' };
+export const limparWinAnsi = (texto: string): string =>
+  Array.from(String(texto ?? ''))
+    .map(ch => TROCAS[ch] ?? ch)
+    .join('')
+    .split('')
+    .filter(ch => ch === '\n' || (ch >= ' ' && ch <= '~') || (ch >= '\u00A1' && ch <= '\u00FF') || WINANSI_EXTRA.has(ch))
+    .join('');
+const _drawText = PDFPage.prototype.drawText;
+PDFPage.prototype.drawText = function (this: PDFPage, text: string, options?: any) {
+  return _drawText.call(this, limparWinAnsi(text), options);
+};
+const _width = PDFFont.prototype.widthOfTextAtSize;
+PDFFont.prototype.widthOfTextAtSize = function (this: PDFFont, text: string, size: number) {
+  return _width.call(this, limparWinAnsi(text), size);
+};
 import QRCode from 'qrcode';
 import {
   SubtipoReceita,
@@ -1002,13 +1023,9 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
     size: 8,
     color: rgb(0.1, 0.65, 0.55),
   });
-  activePage.drawText('✓', {
-    x: margin + 14.5,
-    y: sealY + sealBoxH - 22,
-    size: 10,
-    font: fontBold,
-    color: rgb(1, 1, 1),
-  });
+  // Visto desenhado com linhas (o caractere ✓ não existe na fonte padrão do PDF)
+  activePage.drawLine({ start: { x: margin + 14.5, y: sealY + sealBoxH - 18.5 }, end: { x: margin + 17, y: sealY + sealBoxH - 21 }, thickness: 1.4, color: rgb(1, 1, 1) });
+  activePage.drawLine({ start: { x: margin + 17, y: sealY + sealBoxH - 21 }, end: { x: margin + 21.5, y: sealY + sealBoxH - 15 }, thickness: 1.4, color: rgb(1, 1, 1) });
 
   activePage.drawText('ASSINATURA DO PRESCRITOR', {
     x: margin + 32,
