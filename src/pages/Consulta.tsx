@@ -41,6 +41,8 @@ import {
   subscribeExames,
   subscribeNotas,
   subscribeEvolucoesPaciente,
+  subscribeReceitas,
+  ReceitaDigital,
   saveEvolucaoCaso,
   subscribeRoteirosAnamnese,
   getHomeCareConfig,
@@ -70,6 +72,7 @@ import MedicamentosAplicadosModal from '../components/MedicamentosAplicadosModal
 import ChecklistResiduosModal from '../components/ChecklistResiduosModal';
 import EvolucaoCasoModule from '../components/EvolucaoCasoModule';
 import AnamneseGuiadaModal from '../components/AnamneseGuiadaModal';
+import { IA_ATIVA } from '../config/recursos';
 
 /** Texto curto do atendimento Petlove para o histórico */
 const textoPetlove = (a?: { numero?: string; coparticipacao?: number; procedimento?: string }) =>
@@ -114,6 +117,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
   const [examesHist, setExamesHist] = useState<Exame[]>([]);
   const [notasHist, setNotasHist] = useState<NotaExplicativa[]>([]);
   const [evolucoesHist, setEvolucoesHist] = useState<EvolucaoCaso[]>([]);
+  const [receitasHist, setReceitasHist] = useState<ReceitaDigital[]>([]);
   const [roteirosList, setRoteirosList] = useState<RoteiroAnamnese[]>([]);
 
   // Edição de Consulta existente
@@ -121,7 +125,9 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
   const [editingConsultaData, setEditingConsultaData] = useState<string>('');
 
   // Abas da tela de Consulta
-  const [activeSubTab, setActiveSubTab] = useState<'anamnese' | 'evolucao' | 'prontuario'>('anamnese');
+  const [activeSubTab, setActiveSubTab] = useState<'anamnese' | 'evolucao' | 'prontuario'>('prontuario');
+  // A ficha de anamnese só aparece depois de clicar em Nova Consulta (ou Editar)
+  const [consultaAberta, setConsultaAberta] = useState(false);
 
   // Modais das Ações Principais
   const [isReceitaDigitalOpen, setIsReceitaDigitalOpen] = useState(false);
@@ -357,6 +363,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
     if (p && p.peso) {
       setPesoAtual(String(p.peso));
     }
+    setConsultaAberta(true);
     setActiveSubTab('anamnese');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -373,6 +380,9 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
     const unsubEx = subscribeExames(currentPatientId, setExamesHist);
     const unsubNotas = subscribeNotas(currentPatientId, setNotasHist);
     const unsubEvol = subscribeEvolucoesPaciente(currentPatientId, setEvolucoesHist);
+    const unsubRec = subscribeReceitas(currentPatientId, setReceitasHist);
+    setActiveSubTab('prontuario');
+    setConsultaAberta(false);
 
     // Carrega peso inicial se paciente tiver peso
     const p = pacientes.find(item => item.id === currentPatientId);
@@ -387,6 +397,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
       unsubEx();
       unsubNotas();
       unsubEvol();
+      unsubRec();
     };
   }, [currentPatientId, pacientes]);
 
@@ -448,6 +459,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
       setExameSistemas(consulta.exameFisico);
     }
 
+    setConsultaAberta(true);
     setActiveSubTab('anamnese');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -533,6 +545,8 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
       await saveConsultaAtendimento(novaConsulta);
 
       setConsultaSalvaSucesso(true);
+      setActiveSubTab('prontuario');
+      setConsultaAberta(false);
       setEditingConsultaId(null);
       setEditingConsultaData('');
       setTimeout(() => {
@@ -565,11 +579,12 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
   const timelineItems = useMemo(() => {
     const items: Array<{
       id: string;
-      tipo: 'consulta' | 'termo' | 'exame' | 'analise' | 'evolucao';
+      tipo: 'consulta' | 'termo' | 'exame' | 'analise' | 'evolucao' | 'receita';
       titulo: string;
       data: string;
       detalhes: string;
       responsavel?: string;
+      arquivos?: { rotulo: string; url: string }[];
     }> = [];
 
     // Consultas
@@ -640,7 +655,26 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
         tipo: 'exame',
         titulo: `Exame Complementar: ${e.tipo}${encInfo}`,
         data: e.dataUpload,
-        detalhes: `Arquivo anexado no prontuário.${encDetalhes}`
+        detalhes: `Arquivo anexado no prontuário.${encDetalhes}`,
+        arquivos: e.fileUrl ? [{ rotulo: 'Abrir exame', url: e.fileUrl }] : undefined
+      });
+    });
+
+    // Receitas (emitidas no ClinicOS ou importadas)
+    receitasHist.forEach(r => {
+      if (r.status === 'cancelada') return;
+      const pdf = r.pdfAssinadoUrl || r.pdfImportadoUrl || (r as any).signedPdfUrl || r.originalPdfUrl;
+      const rotuloStatus = r.status === 'importada'
+        ? `Importada${r.origemExterna ? ` · ${r.origemExterna}` : ''}${r.assinadaExternamente ? ' · assinada ICP-Brasil' : ''}`
+        : r.status === 'assinada' ? 'Assinada ICP-Brasil' : r.status === 'substituida' ? 'Substituída' : r.status === 'aguardando_assinatura' ? 'Aguardando assinatura' : 'Rascunho';
+      items.push({
+        id: `rec_${r.id}`,
+        tipo: 'receita',
+        titulo: `${r.isControlado ? 'Receita de Controle Especial' : r.tipo === 'receita_manipulada' ? 'Receita de Manipulado' : 'Receita'} (${rotuloStatus})`,
+        data: r.criadoEm,
+        detalhes: r.conteudoPrescricao || (r.itens || []).map((it, i) => `${i + 1}. ${it.produto}${it.quantidadeExtenso ? ` — ${it.quantidadeExtenso}` : ''}\n   ${it.posologia}`).join('\n'),
+        responsavel: r.veterinarioNome,
+        arquivos: pdf ? [{ rotulo: 'Abrir PDF da receita', url: pdf }] : undefined
       });
     });
 
@@ -649,7 +683,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
       items.push({
         id: nota.id,
         tipo: 'analise', // mantendo o tipo visual como analise/ia
-        titulo: 'Nota Explicativa (Assistida por IA)',
+        titulo: IA_ATIVA ? 'Nota Explicativa (Assistida por IA)' : 'Nota Explicativa',
         data: nota.geradaEm,
         detalhes: nota.conteudo || 'Nota adicionada ao prontuário.'
       });
@@ -684,7 +718,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
 
       return matchesSearch && matchesTipo;
     });
-  }, [consultasHist, termosHist, requisicoesHist, examesHist, notasHist, evolucoesHist, searchProntuario, filtroTipo]);
+  }, [consultasHist, termosHist, requisicoesHist, examesHist, notasHist, evolucoesHist, receitasHist, searchProntuario, filtroTipo]);
 
   return (
     <div className="space-y-6 pb-16 animate-fade-in max-w-[1400px] mx-auto text-slate-700">
@@ -822,17 +856,16 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 mt-6 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setActiveSubTab('anamnese')}
+              onClick={() => setActiveSubTab('prontuario')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                activeSubTab === 'anamnese'
+                activeSubTab === 'prontuario'
                   ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <ClipboardCheck className="w-4 h-4" />
-              Anamnese & Exame Físico
+              <FileText className="w-4 h-4" />
+              Prontuário Completo ({timelineItems.length})
             </button>
-
             <button
               onClick={() => setActiveSubTab('evolucao')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
@@ -842,20 +875,22 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
               }`}
             >
               <TrendingUp className="w-4 h-4" />
-              Evolução do Caso ({evolucoesHist.length})
+              Evolução do Caso ({evolucoesHist.length + receitasHist.filter(r => r.status !== 'cancelada').length + examesHist.length})
             </button>
 
+            {consultaAberta && (
             <button
-              onClick={() => setActiveSubTab('prontuario')}
+              onClick={() => setActiveSubTab('anamnese')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                activeSubTab === 'prontuario'
+                activeSubTab === 'anamnese'
                   ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <FileText className="w-4 h-4" />
-              Prontuário & Linha do Tempo ({timelineItems.length})
+              <ClipboardCheck className="w-4 h-4" />
+              {editingConsultaId ? 'Editando consulta' : 'Consulta em andamento'}
             </button>
+            )}
           </div>
 
           {/* Botão Nova Consulta / Novo Atendimento */}
@@ -1892,6 +1927,52 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
 
       {/* ── CONTEÚDO DA ABA 2: EVOLUÇÃO DO CASO (ACOMPANHAMENTO) ────────────────── */}
       {activeSubTab === 'evolucao' && (
+        <div className="space-y-6">
+        {/* Receitas e exames do caso, do mais recente para o mais antigo */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+          <h3 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-1">
+            <FileSignature className="w-5 h-5 text-teal-600" /> Receitas e exames do caso
+          </h3>
+          <p className="text-xs text-slate-500 mb-4">Tudo o que for emitido ou anexado para este paciente aparece aqui automaticamente.</p>
+          {(() => {
+            const lista = [
+              ...receitasHist.filter(r => r.status !== 'cancelada').map(r => ({
+                id: `r_${r.id}`, data: r.criadoEm, tipo: 'Receita',
+                titulo: (r.itens || []).map(it => it.produto).slice(0, 3).join(' · ') + ((r.itens || []).length > 3 ? ' …' : ''),
+                sub: r.status === 'importada' ? `Importada${r.origemExterna ? ` · ${r.origemExterna}` : ''}` : r.status === 'assinada' ? 'Assinada ICP-Brasil' : r.status === 'aguardando_assinatura' ? 'Aguardando assinatura' : r.status === 'substituida' ? 'Substituída' : 'Rascunho',
+                url: r.pdfAssinadoUrl || r.pdfImportadoUrl || (r as any).signedPdfUrl || r.originalPdfUrl,
+              })),
+              ...examesHist.map(e => ({
+                id: `e_${e.id}`, data: e.dataUpload, tipo: 'Exame', titulo: String(e.tipo || 'Exame'),
+                sub: e.isEncaminhamento && e.encaminhamento?.clinicaOrigem ? `Encaminhamento: ${e.encaminhamento.clinicaOrigem}` : 'Arquivo anexado',
+                url: e.fileUrl,
+              })),
+            ].sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+            if (lista.length === 0) return <p className="text-sm text-slate-400">Nenhuma receita ou exame ainda. Use "Receita Digital", "Receita Impressa" ou anexe um exame.</p>;
+            return (
+              <div className="divide-y divide-slate-100">
+                {lista.map(x => {
+                  const d = new Date(x.data);
+                  return (
+                    <div key={x.id} className="flex items-center gap-3 py-3">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${x.tipo === 'Receita' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{x.tipo}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{x.titulo}</p>
+                        <p className="text-xs text-slate-500">{!isNaN(d.getTime()) ? d.toLocaleDateString('pt-BR') : ''} · {x.sub}</p>
+                      </div>
+                      {x.url ? (
+                        <a href={x.url} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 text-xs font-bold flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5" /> Abrir
+                        </a>
+                      ) : <span className="text-[11px] text-slate-400">sem arquivo</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+
         <EvolucaoCasoModule
           patientId={currentPatientId}
           patientName={currentPatient?.nome}
@@ -1905,6 +1986,7 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
             await saveEvolucaoCaso({ ...data, pacienteId: currentPatientId });
           }}
         />
+        </div>
       )}
 
       {/* ── CONTEÚDO DA ABA 3: PRONTUÁRIO / LINHA DO TEMPO UNIFICADA ──────────── */}
@@ -1914,10 +1996,10 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
             <div>
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-teal-600" />
-                Linha do Tempo e Prontuário do Paciente
+                Prontuário completo do paciente
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Histórico integrado de consultas, termos assinados, exames e análises clínicas.
+                Consultas, receitas, exames, documentos e evoluções, do mais recente para o mais antigo.
               </p>
             </div>
 
@@ -1943,7 +2025,8 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
                 <option value="consulta">Apenas Consultas</option>
                 <option value="termo">Apenas Termos</option>
                 <option value="exame">Apenas Exames</option>
-                <option value="analise">Apenas Análises IA</option>
+                <option value="receita">Apenas Receitas</option>
+                <option value="analise">{IA_ATIVA ? 'Apenas Análises IA' : 'Apenas Notas'}</option>
                 <option value="evolucao">Apenas Evoluções</option>
               </select>
             </div>
@@ -1969,7 +2052,8 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
                   termo: 'bg-indigo-100 text-indigo-700 border-indigo-200',
                   exame: 'bg-amber-100 text-amber-700 border-amber-200',
                   analise: 'bg-purple-100 text-purple-700 border-purple-200',
-                  evolucao: 'bg-amber-100 text-amber-800 border-amber-300'
+                  evolucao: 'bg-amber-100 text-amber-800 border-amber-300',
+                  receita: 'bg-emerald-100 text-emerald-700 border-emerald-200'
                 }[item.tipo];
 
                 const IconComponent = {
@@ -1977,7 +2061,8 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
                   termo: FileSignature,
                   exame: FileText,
                   analise: Sparkles,
-                  evolucao: TrendingUp
+                  evolucao: TrendingUp,
+                  receita: FileSignature
                 }[item.tipo];
 
                 return (
@@ -2021,6 +2106,16 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
                       <p className="text-xs text-slate-600 leading-relaxed mt-1 whitespace-pre-wrap">
                         {item.detalhes}
                       </p>
+                      {item.arquivos && item.arquivos.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {item.arquivos.map(a => (
+                            <a key={a.url} href={a.url} target="_blank" rel="noopener noreferrer"
+                              className="px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 text-xs font-bold flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5" /> {a.rotulo}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
