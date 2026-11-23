@@ -414,7 +414,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = fileName || getReceitaFileName(pacienteNome || 'Paciente', new Date(), false);
+      a.download = fileName || getReceitaFileName(pacienteNome || 'Paciente', new Date(), false, tutorNome);
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -478,6 +478,17 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         };
         setReceita(updatedRec);
         if (onSaved) onSaved(updatedRec);
+
+        // Baixa a via assinada com o nome do pet e do tutor
+        const blobAss = new Blob([pdfAssinado as BlobPart], { type: 'application/pdf' });
+        const urlAss = URL.createObjectURL(blobAss);
+        const link = document.createElement('a');
+        link.href = urlAss;
+        link.download = getReceitaFileName(rec.pacienteNome || pacienteNome || 'Paciente', rec.criadoEm || new Date(), true, rec.tutorNome || tutorNome);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(urlAss), 5000);
       }
     } catch (err: any) {
       console.error('Erro na assinatura com A1:', err);

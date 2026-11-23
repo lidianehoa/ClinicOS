@@ -438,9 +438,16 @@ export async function processarValidacaoPdfAssinado(
   const storageFilePath = `clinicas/${tenantId}/receitas/${receitaId}/assinada.pdf`;
   const file = bucket.file(storageFilePath);
 
+  // Nome do arquivo ao abrir/baixar: Receita_<pet>_<tutor>_<data>_assinada.pdf
+  const limparNome = (v: any) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const dEmissao = new Date(receita.criadoEm || Date.now());
+  const dataNome = `${String(dEmissao.getDate()).padStart(2, '0')}-${String(dEmissao.getMonth() + 1).padStart(2, '0')}-${dEmissao.getFullYear()}`;
+  const nomeArquivo = ['Receita', limparNome(receita.pacienteNome) || 'Animal', limparNome(receita.tutorNome), dataNome, 'assinada'].filter(Boolean).join('_') + '.pdf';
+
   await file.save(signedPdfBuffer, {
     contentType: 'application/pdf',
     metadata: {
+      contentDisposition: `inline; filename="${nomeArquivo}"`,
       metadata: {
         receitaId,
         tenantId,

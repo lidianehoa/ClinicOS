@@ -214,20 +214,24 @@ export async function computeSha256(data: Uint8Array): Promise<string> {
 export function getReceitaFileName(
   pacienteNome: string,
   dataEmissao: Date | string = new Date(),
-  assinada: boolean = false
+  assinada: boolean = false,
+  tutorNome?: string
 ): string {
   const d = typeof dataEmissao === 'string' ? new Date(dataEmissao) : dataEmissao;
   const dia = String(d.getDate()).padStart(2, '0');
   const mes = String(d.getMonth() + 1).padStart(2, '0');
   const ano = d.getFullYear();
   const dataFormatada = `${dia}-${mes}-${ano}`;
-  const nomeLimpo = (pacienteNome || 'Animal')
+  const limpar = (s: string) => String(s || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9_-]/g, '_');
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const nomeLimpo = limpar(pacienteNome) || 'Animal';
+  const tutorLimpo = limpar(tutorNome || '');
 
-  const prefixo = assinada ? 'Receita_assinada' : 'Receita';
-  return `${prefixo}_${nomeLimpo}_${dataFormatada}.pdf`;
+  // Ex.: Receita_Meg_Edinete_Lima_23-11-2026_assinada.pdf
+  return `Receita_${nomeLimpo}${tutorLimpo ? `_${tutorLimpo}` : ''}_${dataFormatada}${assinada ? '_assinada' : ''}.pdf`;
 }
 
 /**
@@ -1222,7 +1226,7 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
   const pdfBytes = await doc.save({ useObjectStreams: false });
   const originalSize = pdfBytes.length;
   const originalHashSha256 = await computeSha256(pdfBytes);
-  const fileName = getReceitaFileName(data.pacienteNome, data.dataEmissao, data.status === 'assinada');
+  const fileName = getReceitaFileName(data.pacienteNome, data.dataEmissao, data.status === 'assinada', data.tutorNome);
 
   return {
     pdfBytes,
