@@ -919,7 +919,7 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
     width: contentWidth,
     height: dispensaBoxH,
     color: rgb(0.97, 1.0, 0.99),
-    borderColor: rgb(0.2, 0.75, 0.65),
+    borderColor: rgb(primaryClinic.r, primaryClinic.g, primaryClinic.b),
     borderWidth: 1.2,
   });
 
@@ -1025,7 +1025,7 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
     x: margin + 18,
     y: sealY + sealBoxH - 18,
     size: 8,
-    color: rgb(0.1, 0.65, 0.55),
+    color: rgb(primaryClinic.r, primaryClinic.g, primaryClinic.b),
   });
   // Visto desenhado com linhas (o caractere ✓ não existe na fonte padrão do PDF)
   activePage.drawLine({ start: { x: margin + 14.5, y: sealY + sealBoxH - 18.5 }, end: { x: margin + 17, y: sealY + sealBoxH - 21 }, thickness: 1.4, color: rgb(1, 1, 1) });

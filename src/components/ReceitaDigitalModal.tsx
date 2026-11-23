@@ -333,7 +333,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
           : undefined,
         clinicLogoBase64: clinicLogo,
         clinicSlogan: clinicConfig?.slogan,
-        primaryColorHex: clinicConfig?.primaryColor || '#0f766e',
+        primaryColorHex: clinicConfig?.primaryColor || '#1A4C37',
         veterinarioNome: resolvedVetNome,
         veterinarioCrmv: resolvedCrmv,
         veterinarioEmail: userProfile?.email || receita?.veterinarioCpf,
