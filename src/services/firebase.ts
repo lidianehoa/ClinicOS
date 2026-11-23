@@ -30,6 +30,8 @@ export const auth = getAuth(app);
  * - onSnapshot ainda mantém sincronização em tempo real com o servidor.
  */
 export const db = initializeFirestore(app, {
+  // Campos vazios (undefined) são ignorados em vez de derrubar a gravação
+  ignoreUndefinedProperties: true,
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
   }),
