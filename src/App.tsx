@@ -22,6 +22,7 @@ import RelatoriosFinanceiros from './pages/financeiro/RelatoriosFinanceiros';
 import PainelFinanceiro from './pages/financeiro/PainelFinanceiro';
 import Precificacao from './pages/financeiro/Precificacao';
 import Compras from './pages/financeiro/Compras';
+import { IA_ATIVA } from './config/recursos';
 import Servicos from './pages/cadastros/Servicos';
 import Reconciliation from './pages/Reconciliation';
 import PDVAutonomo from './pages/PDVAutonomo';
@@ -253,9 +254,9 @@ function App() {
           userProfile={profile}
         />
       )}
-      {activeTab === 'assistente' && <AssistenteIA userProfile={profile} />}
+      {IA_ATIVA && activeTab === 'assistente' && <AssistenteIA userProfile={profile} />}
       {activeTab === 'configuracoes' && <Configuracoes userProfile={profile} />}
-      {activeTab === 'caso-clinico' && <CasoClinicoDetail userProfile={profile} />}
+      {IA_ATIVA && activeTab === 'caso-clinico' && <CasoClinicoDetail userProfile={profile} />}
       {activeTab === 'admin' && <AdminConsole userProfile={profile} />}
     </AppShell>
   );

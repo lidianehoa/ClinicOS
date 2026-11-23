@@ -205,3 +205,22 @@ export const saveCompra = async (i: Partial<ItemCompra>) => {
   return id;
 };
 export const deleteCompra = (id: string) => deleteDoc(doc(col('compras_planejadas'), id));
+
+// ── Metas financeiras (definidas pela usuária) ───────────────────────────
+
+export interface Metas {
+  lucroDia?: number | null;
+  lucroSemana?: number | null;
+  lucroMes?: number | null;
+  faturamentoDia?: number | null;
+  faturamentoSemana?: number | null;
+  faturamentoMes?: number | null;
+}
+
+export const subscribeMetas = (cb: (m: Metas) => void) => {
+  if (!db) { cb({}); return () => {}; }
+  return onSnapshot(doc(col('financeiro_config'), 'metas'),
+    s => cb(s.exists() ? (s.data() as Metas) : {}),
+    e => { console.error('metas:', e.message); cb({}); });
+};
+export const saveMetas = (m: Metas) => setDoc(doc(col('financeiro_config'), 'metas'), limpar(m));

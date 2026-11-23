@@ -12,6 +12,7 @@ import {
 } from '../services/dataService';
 import UploadExameModal from './UploadExameModal';
 import ReviewAnaliseModal from './ReviewAnaliseModal';
+import { IA_ATIVA } from '../config/recursos';
 
 interface PatientTimelineProps {
   clientId: string;
@@ -95,15 +96,15 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ clientId, onViewRecor
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="font-bold text-slate-700">Histórico de Prontuários e Exames (ClinicOS IA)</h3>
-        <button 
+        <h3 className="font-bold text-slate-700">Histórico de Prontuários e Exames</h3>
+        {IA_ATIVA && <button 
           onClick={handleCreateCaso}
           disabled={!clientId}
           className={`flex items-center gap-2 px-4 py-2 font-bold text-sm rounded-xl transition-colors ${!clientId ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-teal-50 text-teal-600 hover:bg-teal-100'}`}
         >
           <Sparkles className="w-4 h-4" />
           Novo Caso Clínico (IA)
-        </button>
+        </button>}
       </div>
 
       <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent">
@@ -169,7 +170,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ clientId, onViewRecor
                     <a href={exame.fileUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-slate-50 text-slate-600 font-bold text-[10px] rounded-lg hover:bg-slate-100 flex items-center gap-1">
                       <FileText className="w-3 h-3" /> Ver Exame
                     </a>
-                    {isAnalyzed && (
+                    {IA_ATIVA && isAnalyzed && (
                        <button onClick={() => setSelectedExameForReview(exame)} className="px-3 py-1.5 bg-pink-50 text-pink-600 font-bold text-[10px] rounded-lg hover:bg-pink-100 flex items-center gap-1 cursor-pointer">
                          <Sparkles className="w-3 h-3" /> Revisar Análise
                        </button>

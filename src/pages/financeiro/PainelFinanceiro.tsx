@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, Search, TrendingUp, TrendingDown, Wallet, Package,
-  AlertCircle, X, Trash2, ArrowDownCircle, ArrowUpCircle, Receipt,
+  AlertCircle, X, Trash2, ArrowDownCircle, ArrowUpCircle, Receipt, Target,
 } from 'lucide-react';
+import { Metas, subscribeMetas, saveMetas } from '../../services/precificacao';
 import {
   subscribeContasReceber, subscribeContasPagar, subscribeCategoriasFinanceiras, subscribeCaixaComData,
   saveContaReceber, saveContaPagar, deleteContaReceber, deleteContaPagar, saveCategoriaFinanceira,
@@ -78,13 +79,16 @@ export default function PainelFinanceiro() {
   const [filtro, setFiltro] = useState<'todos' | 'entrada' | 'saida' | 'pendente'>('todos');
   const [busca, setBusca] = useState('');
   const [editando, setEditando] = useState<Partial<Lanc> | null>(null);
+  const [metas, setMetas] = useState<Metas>({});
+  const [editarMetas, setEditarMetas] = useState(false);
 
   useEffect(() => {
     const u1 = subscribeContasReceber(d => { setReceber(d); setCarregando(false); });
     const u2 = subscribeContasPagar(setPagar);
     const u3 = subscribeCategoriasFinanceiras(setCategorias);
     const u4 = subscribeCaixaComData(setCaixa);
-    return () => { u1(); u2(); u3(); u4(); };
+    const u5 = subscribeMetas(setMetas);
+    return () => { u1(); u2(); u3(); u4(); u5(); };
   }, []);
 
   const catPorId = useMemo(() => new Map(categorias.map(c => [c.id, c])), [categorias]);
@@ -220,6 +224,29 @@ export default function PainelFinanceiro() {
     return [l.descricao, l.categoria, l.contraparte, l.forma].join(' ').toLowerCase().includes(q);
   });
 
+  // ── Metas: hoje, esta semana (seg a dom) e o mês escolhido ──────────────
+  const resumoIntervalo = (de: string, ate: string) => {
+    let ent = 0, sai = 0;
+    for (const l of lancamentos) {
+      if (l.situacao !== 'realizado' || l.data < de || l.data > ate) continue;
+      if (l.tipo === 'entrada') ent += l.valor;
+      else if (!l.investimento) sai += l.valor;
+    }
+    return { faturamento: ent, lucro: ent - sai };
+  };
+  const hj = hoje();
+  const dHoje = new Date(hj + 'T12:00:00');
+  const seg = new Date(dHoje); seg.setDate(dHoje.getDate() - ((dHoje.getDay() + 6) % 7));
+  const dom = new Date(seg); dom.setDate(seg.getDate() + 6);
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const rHoje = resumoIntervalo(hj, hj);
+  const rSemana = resumoIntervalo(iso(seg), iso(dom));
+  const rMes = { faturamento: atual.entradas, lucro: atual.lucro };
+  const diasNoMes = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5)), 0).getDate();
+  const diaAtual = mes === hj.slice(0, 7) ? dHoje.getDate() : mes < hj.slice(0, 7) ? diasNoMes : 0;
+  const ritmoMes = diaAtual > 0 ? (atual.lucro / diaAtual) * diasNoMes : 0;
+  const temMetas = Object.values(metas).some(v => v != null && Number(v) > 0);
+
   const variacao = (a: number, b: number) => {
     if (!b) return null;
     const v = (a - b) / Math.abs(b);
@@ -266,6 +293,26 @@ export default function PainelFinanceiro() {
               <Plus className="w-4 h-4" /> Saída
             </button>
           </div>
+        </div>
+
+        {/* Metas */}
+        <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-slate-800 flex items-center gap-2"><Target className="w-5 h-5 text-teal-700" /> Metas</h2>
+            <button onClick={() => setEditarMetas(true)} className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700">
+              {temMetas ? 'Editar metas' : 'Definir metas'}
+            </button>
+          </div>
+          {!temMetas ? (
+            <p className="text-sm text-slate-500">Defina quanto quer lucrar (e faturar, se quiser) por dia, por semana e por mês. O painel mostra quanto já foi e quanto falta.</p>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-5">
+              <BlocoMeta titulo="Hoje" lucro={rHoje.lucro} fat={rHoje.faturamento} metaLucro={metas.lucroDia} metaFat={metas.faturamentoDia} />
+              <BlocoMeta titulo="Esta semana" lucro={rSemana.lucro} fat={rSemana.faturamento} metaLucro={metas.lucroSemana} metaFat={metas.faturamentoSemana} />
+              <BlocoMeta titulo={nomeMes(mes)} lucro={rMes.lucro} fat={rMes.faturamento} metaLucro={metas.lucroMes} metaFat={metas.faturamentoMes}
+                extra={diaAtual > 0 && diaAtual < diasNoMes ? `No ritmo atual, o lucro do mês fecha em ${brl0(ritmoMes)}.` : undefined} />
+            </div>
+          )}
         </div>
 
         {/* Cartões do mês */}
@@ -422,6 +469,8 @@ export default function PainelFinanceiro() {
         </div>
       </div>
 
+      {editarMetas && <ModalMetas metas={metas} onFechar={() => setEditarMetas(false)} />}
+
       {editando && (
         <ModalLancamento
           inicial={editando}
@@ -434,6 +483,80 @@ export default function PainelFinanceiro() {
 }
 
 // ── Peças da tela ───────────────────────────────────────────────────────
+
+function BlocoMeta({ titulo, lucro, fat, metaLucro, metaFat, extra }: {
+  titulo: string; lucro: number; fat: number; metaLucro?: number | null; metaFat?: number | null; extra?: string;
+}) {
+  const linha = (rotulo: string, valor: number, meta?: number | null) => {
+    if (!meta || meta <= 0) return null;
+    const p = Math.max(0, Math.min(1, valor / meta));
+    const ok = valor >= meta;
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs">
+          <span className="text-slate-500">{rotulo}</span>
+          <span className={`font-semibold ${ok ? 'text-teal-700' : 'text-slate-700'}`}>{brl0(valor)} <span className="text-slate-400 font-normal">de {brl0(meta)}</span></span>
+        </div>
+        <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full ${ok ? 'bg-teal-600' : 'bg-pink-400'}`} style={{ width: `${Math.max(2, p * 100)}%` }} />
+        </div>
+        <p className={`text-[11px] ${ok ? 'text-teal-700 font-semibold' : 'text-slate-400'}`}>{ok ? 'Meta batida!' : `Faltam ${brl0(meta - valor)}`}</p>
+      </div>
+    );
+  };
+  const algum = (metaLucro && metaLucro > 0) || (metaFat && metaFat > 0);
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-bold text-slate-700">{titulo}</p>
+      {algum ? <>{linha('Lucro', lucro, metaLucro)}{linha('Faturamento', fat, metaFat)}</> : <p className="text-xs text-slate-400">Sem meta para este período.</p>}
+      {extra && <p className="text-[11px] text-slate-500">{extra}</p>}
+    </div>
+  );
+}
+
+function ModalMetas({ metas, onFechar }: { metas: Metas; onFechar: () => void }) {
+  const [m, setM] = useState<Record<string, string>>(Object.fromEntries(Object.entries(metas).map(([k, v]) => [k, v != null ? String(v).replace('.', ',') : ''])));
+  const [salvando, setSalvando] = useState(false);
+  const campoM = 'w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500';
+  const salvar = async () => {
+    setSalvando(true);
+    const out: Metas = {};
+    for (const k of ['lucroDia', 'lucroSemana', 'lucroMes', 'faturamentoDia', 'faturamentoSemana', 'faturamentoMes'] as const) {
+      const v = num(m[k]);
+      out[k] = v > 0 ? v : null;
+    }
+    await saveMetas(out);
+    onFechar();
+  };
+  const linhas: [string, string, string][] = [['Por dia', 'lucroDia', 'faturamentoDia'], ['Por semana', 'lucroSemana', 'faturamentoSemana'], ['Por mês', 'lucroMes', 'faturamentoMes']];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onFechar}>
+      <div className="bg-white rounded-3xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-800">Suas metas</h3>
+          <button onClick={onFechar}><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-xs text-slate-500">Deixe em branco o que não quiser acompanhar. Lucro = entradas recebidas menos custos pagos, sem os investimentos.</p>
+        <div className="grid grid-cols-3 gap-2 text-xs font-semibold text-slate-500">
+          <span />
+          <span>Lucro (R$)</span>
+          <span>Faturamento (R$)</span>
+          {linhas.map(([rot, kl, kf]) => (
+            <div key={rot} className="contents">
+              <span className="self-center text-slate-700">{rot}</span>
+              <input value={m[kl] || ''} onChange={e => setM({ ...m, [kl]: e.target.value })} inputMode="decimal" className={campoM} placeholder="—" />
+              <input value={m[kf] || ''} onChange={e => setM({ ...m, [kf]: e.target.value })} inputMode="decimal" className={campoM} placeholder="—" />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button onClick={onFechar} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600">Cancelar</button>
+          <button disabled={salvando} onClick={salvar} className="flex-1 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-bold disabled:opacity-50">Salvar metas</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Cartao({ titulo, valor, icone, cor, detalhe, variacao, destaque }: {
   titulo: string; valor: string; icone: React.ReactNode; cor: string; detalhe?: string;

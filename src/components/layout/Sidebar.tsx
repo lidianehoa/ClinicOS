@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Upload, LogOut, Shield, DollarSign, Settings, ShieldCheck, Calendar, GitMerge, Package, Stethoscope, Sparkles, PawPrint, History, ArrowDownCircle, ArrowUpCircle, PieChart, Briefcase, Calculator, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, Users, Upload, LogOut, Shield, DollarSign, Settings, ShieldCheck, Calendar, GitMerge, Package, Stethoscope, PawPrint, History, ArrowDownCircle, ArrowUpCircle, PieChart, Briefcase, Calculator, ShoppingCart } from 'lucide-react';
 import { ActiveTab } from '../../App';
 import { AppUser } from '../../services/dataService';
 import { useTranslation } from 'react-i18next';
@@ -37,7 +37,6 @@ const navGroups: NavGroup[] = [
   {
     label: '',
     items: [
-      { id: 'assistente',    transKey: '', labelStr: 'ClinicOS IA', icon: Sparkles },
     ]
   },
   {

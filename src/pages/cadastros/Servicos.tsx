@@ -1,18 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   Briefcase, Plus, Search, Filter, Edit, Trash2, Calculator, 
-  Clock, DollarSign, Tag, CheckCircle2, XCircle, Settings2, Sparkles
+  Clock, DollarSign, Tag, CheckCircle2, XCircle
 } from 'lucide-react';
 import { 
   ClinicService, subscribeServices, saveService, deleteService 
 } from '../../services/dataService';
-import { 
-  PricingConfig, subscribePricingConfig, ServicePricingInput, 
-  PricingResult, subscribeServicePricingList, saveServicePricing, calculateServicePrice 
-} from '../../services/pricingService';
 import ServiceModal from './ServiceModal';
-import ServicePricingModal from '../pricing/ServicePricingModal';
-import PricingConfigModal from './PricingConfigModal';
 
 const DEFAULT_CATEGORIES = [
   'Consulta',
@@ -27,8 +21,6 @@ const DEFAULT_CATEGORIES = [
 
 export default function Servicos() {
   const [services, setServices] = useState<ClinicService[]>([]);
-  const [pricings, setPricings] = useState<(ServicePricingInput & { result: PricingResult })[]>([]);
-  const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -40,10 +32,7 @@ export default function Servicos() {
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
   const [selectedServiceForEdit, setSelectedServiceForEdit] = useState<ClinicService | undefined>(undefined);
 
-  const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
-  const [selectedServiceForPricing, setSelectedServiceForPricing] = useState<ClinicService | undefined>(undefined);
 
-  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   useEffect(() => {
     const unsubServices = subscribeServices((data) => {
@@ -51,18 +40,8 @@ export default function Servicos() {
       setLoading(false);
     });
 
-    const unsubPricings = subscribeServicePricingList((data) => {
-      setPricings(data);
-    });
-
-    const unsubConfig = subscribePricingConfig((cfg) => {
-      setPricingConfig(cfg);
-    });
-
     return () => {
       unsubServices();
-      unsubPricings();
-      unsubConfig();
     };
   }, []);
 
@@ -117,26 +96,6 @@ export default function Servicos() {
     }
   };
 
-  const handleSavePricing = async (pricingInput: ServicePricingInput) => {
-    if (!selectedServiceForPricing || !pricingConfig) return;
-    
-    // Calculate final pricing result
-    const result = calculateServicePrice(pricingInput, pricingConfig);
-    
-    await saveServicePricing({
-      ...pricingInput,
-      result
-    });
-
-    // Update service price with suggested/target price if lower or requested
-    await saveService({
-      ...selectedServiceForPricing,
-      price: result.suggestedPrice > 0 ? Number(result.suggestedPrice.toFixed(2)) : selectedServiceForPricing.price
-    });
-
-    setIsPricingModalOpen(false);
-    setSelectedServiceForPricing(undefined);
-  };
 
   return (
     <div className="h-full bg-base overflow-y-auto">
@@ -161,14 +120,14 @@ export default function Servicos() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => setIsConfigModalOpen(true)}
+            <a
+              href="?tab=precificacao"
               className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-teal-200 hover:text-white border border-white/10 rounded-xl text-sm font-semibold transition-all"
-              title="Configurar impostos, taxas e custos fixos para formação de preço"
+              title="Ficha técnica e preço sugerido de cada serviço"
             >
-              <Settings2 className="w-4 h-4 text-teal-400" />
-              Regras de Precificação
-            </button>
+              <Calculator className="w-4 h-4 text-teal-400" />
+              Precificar em Financeiro → Precificação
+            </a>
             <button
               onClick={() => {
                 setSelectedServiceForEdit(undefined);
@@ -308,14 +267,12 @@ export default function Servicos() {
                     <th className="px-6 py-4">Categoria</th>
                     <th className="px-6 py-4 text-center">Duração</th>
                     <th className="px-6 py-4 text-right">Preço de Venda</th>
-                    <th className="px-6 py-4 text-center">Precificação</th>
                     <th className="px-6 py-4 text-center">Status</th>
                     <th className="px-6 py-4 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredServices.map((service) => {
-                    const pricingItem = pricings.find(p => p.serviceId === service.id);
 
                     return (
                       <tr key={service.id} className="hover:bg-white/5 transition-colors group">
@@ -357,32 +314,6 @@ export default function Servicos() {
                           R$ {service.price ? service.price.toFixed(2) : '0.00'}
                         </td>
 
-                        {/* Precificação Científica status */}
-                        <td className="px-6 py-4 text-center">
-                          {pricingItem?.result ? (
-                            <button
-                              onClick={() => {
-                                setSelectedServiceForPricing(service);
-                                setIsPricingModalOpen(true);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:bg-purple-500/30 rounded-full text-xs font-semibold transition-all"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              Preço Sugerido: R$ {pricingItem.result.suggestedPrice.toFixed(2)}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => {
-                                setSelectedServiceForPricing(service);
-                                setIsPricingModalOpen(true);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/10 hover:border-purple-400 text-white/60 hover:text-purple-300 rounded-full text-xs font-medium transition-all"
-                            >
-                              <Calculator className="w-3.5 h-3.5" />
-                              Calcular Margem
-                            </button>
-                          )}
-                        </td>
 
                         {/* Status */}
                         <td className="px-6 py-4 text-center">
@@ -400,16 +331,6 @@ export default function Servicos() {
                         {/* Ações */}
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => {
-                                setSelectedServiceForPricing(service);
-                                setIsPricingModalOpen(true);
-                              }}
-                              title="Precificar Serviço"
-                              className="p-2 text-purple-300 hover:bg-purple-500/20 rounded-xl transition-colors"
-                            >
-                              <Calculator className="w-4 h-4" />
-                            </button>
                             <button
                               onClick={() => {
                                 setSelectedServiceForEdit(service);
@@ -450,25 +371,6 @@ export default function Servicos() {
         />
       )}
 
-      {/* Service Pricing Modal */}
-      {isPricingModalOpen && selectedServiceForPricing && pricingConfig && (
-        <ServicePricingModal
-          service={selectedServiceForPricing}
-          config={pricingConfig}
-          initialData={pricings.find(p => p.serviceId === selectedServiceForPricing.id)}
-          onClose={() => setIsPricingModalOpen(false)}
-          onSave={handleSavePricing}
-        />
-      )}
-
-      {/* Global Pricing Config Modal */}
-      {isConfigModalOpen && pricingConfig && (
-        <PricingConfigModal
-          config={pricingConfig}
-          onClose={() => setIsConfigModalOpen(false)}
-          onSaved={() => {}}
-        />
-      )}
     </div>
   );
 }

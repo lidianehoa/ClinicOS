@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, AlertCircle, Sparkles, FileText, FileSpreadsheet, Building2, ChevronLeft } from 'lucide-react';
+import { IA_ATIVA } from '../../config/recursos';
 import { parseCSV, parseOFX, BankTransaction } from '../../utils/statementParsers';
 import { parsePDFWithClaude } from '../../services/bankStatementAI';
 import { autoMatch, validateBases, checkIntegrity } from '../../utils/autoMatch';
@@ -232,6 +233,7 @@ const ReconciliationImportModal = ({ onClose, onSuccess }: Props) => {
           <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
             
             {/* PDF Card */}
+            {IA_ATIVA && (
             <div 
               onClick={() => handleFormatSelect('pdf')}
               className="bg-white/5 border border-white/10 rounded-2xl p-6 cursor-pointer hover:border-purple-500/50 hover:bg-white/10 transition-all flex flex-col items-center text-center group relative overflow-hidden"
@@ -251,6 +253,7 @@ const ReconciliationImportModal = ({ onClose, onSuccess }: Props) => {
                 </div>
               )}
             </div>
+            )}
 
             {/* CSV Card */}
             <div 

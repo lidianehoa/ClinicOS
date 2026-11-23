@@ -35,6 +35,7 @@ import {
   FileText,
   ClipboardList
 } from 'lucide-react';
+import { IA_ATIVA } from '../config/recursos';
 import { 
   saveUserProfile, type AppUser, 
   getFiscalConfig, saveFiscalConfig, type FiscalConfig, 
@@ -194,7 +195,7 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
         { id: 'utilizadores', label: 'Utilizadores do Sistema', icon: Users },
         ...(isAdmin ? [{ id: 'fiscal', label: 'Fiscal / NFe', icon: Receipt }] : []),
         ...(isAdmin ? [{ id: 'integrations', label: 'Integrações', icon: Sparkles }] : []),
-        ...(isAdmin ? [{ id: 'ia-protocolos', label: 'IA e Protocolos', icon: Bot }] : []),
+        ...(isAdmin && IA_ATIVA ? [{ id: 'ia-protocolos', label: 'IA e Protocolos', icon: Bot }] : []),
         ...(isAdmin ? [{ id: 'catalogo-exames', label: 'Catálogo de Exames', icon: FileText }] : []),
       ]
     }
@@ -1488,6 +1489,7 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
       <VetzapIntegracaoCard />
 
       <form onSubmit={handleSaveIntegrations} className="space-y-6">
+        {IA_ATIVA && <>
         <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm space-y-6">
           <div className="flex items-center gap-3 pb-4 border-b border-slate-50">
             <div className="p-2 bg-indigo-50 rounded-lg text-indigo-500">
@@ -1534,6 +1536,7 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
             <p className="text-[10px] text-slate-400">Requerida para leitura inteligente de extratos bancários em PDF na Conciliação Bancária.</p>
           </div>
         </div>
+        </>}
 
         <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm space-y-6">
           <div className="flex items-center gap-3 pb-4 border-b border-slate-50">
@@ -1685,7 +1688,7 @@ const Configuracoes = ({ userProfile }: { userProfile: AppUser | null }) => {
           {activeSection === 'fiscal' && renderNFe()}
           {activeSection === 'integrations' && renderIntegrations()}
           {activeSection === 'utilizadores' && renderResponsaveis()}
-          {activeSection === 'ia-protocolos' && <IAProtocolos userProfile={userProfile} />}
+          {IA_ATIVA && activeSection === 'ia-protocolos' && <IAProtocolos userProfile={userProfile} />}
           {activeSection === 'catalogo-exames' && <CatalogoExamesAdmin userProfile={userProfile} />}
           {activeSection === 'roteiros-anamnese' && <RoteirosAnamneseAdmin userProfile={userProfile} />}
           {activeSection !== 'empresa' && activeSection !== 'tipos-atendimento' && activeSection !== 'meu-perfil' && activeSection !== 'fiscal' && activeSection !== 'integrations' && activeSection !== 'utilizadores' && activeSection !== 'ia-protocolos' && activeSection !== 'catalogo-exames' && activeSection !== 'roteiros-anamnese' && renderPlaceholder(
