@@ -190,7 +190,7 @@ export interface AppUser {
 }
 
 // ─── Assinatura de Receitas ICP-Brasil & Token de Dispensação ───────────────
-export type StatusReceita = 'rascunho' | 'aguardando_assinatura' | 'assinada' | 'substituida' | 'cancelada';
+export type StatusReceita = 'rascunho' | 'aguardando_assinatura' | 'assinada' | 'substituida' | 'cancelada' | 'importada';
 
 export type SubtipoReceita = 'simples' | 'controle_especial' | 'antimicrobiano' | 'magistral';
 export type StatusDispensacao = 'nao_dispensada' | 'parcialmente_dispensada' | 'dispensada' | 'cancelada';
@@ -328,6 +328,12 @@ export interface ReceitaDigital {
   criadoEm: string;
   atualizadoEm: string;
   assinadoEm?: string;
+
+  // Receita emitida fora do ClinicOS e importada para o histórico (status 'importada')
+  origemExterna?: string;          // ex.: 'AtendVet', 'Receita própria (PDF)'
+  tokenExterno?: string;           // token de dispensação do sistema de origem
+  assinadaExternamente?: boolean;  // o PDF original foi assinado (ICP-Brasil) no sistema de origem
+  pdfImportadoUrl?: string;        // cópia do PDF original no Storage
 }
 
 export interface VerificacaoReceitaPublica {

@@ -276,7 +276,9 @@ export default function Historico({ userProfile: _userProfile }: HistoricoProps)
       const p = pacienteMap.get(r.pacienteId);
       const tutor = p ? tutorMap.get(p.tutorId) : null;
       const isAssinada = r.status === 'assinada';
-      const statusLabel = r.status === 'assinada'
+      const statusLabel = r.status === 'importada'
+        ? `Importada${r.origemExterna ? ` · ${r.origemExterna}` : ''}`
+        : r.status === 'assinada'
         ? 'Assinada (ICP-Brasil)'
         : r.status === 'aguardando_assinatura'
         ? 'Aguardando Assinatura'
@@ -285,20 +287,21 @@ export default function Historico({ userProfile: _userProfile }: HistoricoProps)
         : 'Rascunho';
 
       const tags = ['Receita', statusLabel];
-      if (isAssinada) tags.push('ICP-Brasil');
+      if (isAssinada || r.assinadaExternamente) tags.push('ICP-Brasil');
+      if (r.isControlado) tags.push('Controle especial');
       if (r.tipo === 'receita_manipulada') tags.push('Manipulado');
 
       feed.push({
         id: `rec_${r.id}`,
         tipo: 'receita',
         titulo: r.tipo === 'receita_manipulada' ? 'Receita de Manipulado' : 'Receita Veterinária',
-        subtitulo: `Status: ${statusLabel} · Cód: ${r.codigoVerificacao}`,
+        subtitulo: r.status === 'importada' ? `${statusLabel}${r.tokenExterno ? ` · Token ${r.tokenExterno}` : ''}` : `Status: ${statusLabel} · Cód: ${r.codigoVerificacao}`,
         pacienteNome: r.pacienteNome || p?.nome || 'Paciente',
         pacienteEspecie: r.pacienteEspecie || p?.especie,
         pacienteId: r.pacienteId,
         tutorNome: r.tutorNome || tutor?.nomeCompleto || 'Tutor',
         tutorId: tutor?.id,
-        dataHora: r.atualizadoEm || r.criadoEm,
+        dataHora: r.status === 'importada' ? r.criadoEm : (r.atualizadoEm || r.criadoEm),
         resumo: r.conteudoPrescricao || r.conteudoClinico || (isAssinada ? `Documento assinado digitalmente por ${r.assinatura?.titular || r.veterinarioNome}` : 'Receita emitida no sistema'),
         veterinario: r.veterinarioNome,
         tags,
@@ -841,7 +844,15 @@ export default function Historico({ userProfile: _userProfile }: HistoricoProps)
                 </div>
               )}
 
-              {itemDetalhe.tipo === 'receita' && itemDetalhe.raw && (
+              {itemDetalhe.tipo === 'receita' && itemDetalhe.raw?.status === 'importada' && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 text-[12px] text-slate-700">
+                  <p><strong>Emitida fora do ClinicOS</strong>{itemDetalhe.raw.origemExterna ? ` (${itemDetalhe.raw.origemExterna})` : ''} e importada para o histórico.</p>
+                  {itemDetalhe.raw.tokenExterno && <p>Token de dispensação no sistema de origem: <span className="font-mono font-bold">{itemDetalhe.raw.tokenExterno}</span></p>}
+                  {itemDetalhe.raw.assinadaExternamente && <p>O PDF original foi assinado com certificado ICP-Brasil no sistema de origem.</p>}
+                </div>
+              )}
+
+              {itemDetalhe.tipo === 'receita' && itemDetalhe.raw && itemDetalhe.raw.status !== 'importada' && (
                 <div className="p-3 bg-teal-50 border border-teal-200 rounded-2xl space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-teal-900">Código de Verificação Pública:</span>
@@ -873,7 +884,18 @@ export default function Historico({ userProfile: _userProfile }: HistoricoProps)
                     Baixar PDF Assinado
                   </a>
                 )}
-                {itemDetalhe.tipo === 'receita' && itemDetalhe.raw?.codigoVerificacao && (
+                {itemDetalhe.tipo === 'receita' && itemDetalhe.raw?.pdfImportadoUrl && (
+                  <a
+                    href={itemDetalhe.raw.pdfImportadoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Abrir PDF original
+                  </a>
+                )}
+                {itemDetalhe.tipo === 'receita' && itemDetalhe.raw?.codigoVerificacao && itemDetalhe.raw?.status !== 'importada' && (
                   <a
                     href={`/verificar/${itemDetalhe.raw.codigoVerificacao}`}
                     target="_blank"

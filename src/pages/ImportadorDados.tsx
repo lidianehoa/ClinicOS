@@ -6,6 +6,7 @@ import {
 import Papa from 'papaparse';
 import ImportarProntuarios from '../components/ImportarProntuarios';
 import ImportarFinanceiro from '../components/ImportarFinanceiro';
+import ImportarReceitas from '../components/ImportarReceitas';
 import { storage } from '../services/firebase';
 import { ref, uploadBytes } from 'firebase/storage';
 import { saveDailyFlow, batchSaveCustomers, batchSaveProdutos, toCustomerId, toLocalDateString, canDelete } from '../services/dataService';
@@ -17,7 +18,7 @@ interface ImportadorDadosProps {
   userProfile: AppUser | null;
 }
 
-type TabType = 'clientes' | 'vendas' | 'produtos' | 'prontuarios' | 'financeiro';
+type TabType = 'clientes' | 'vendas' | 'produtos' | 'prontuarios' | 'financeiro' | 'receitas';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -533,6 +534,7 @@ const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps)
     { key: 'produtos', label: 'Produtos & Serviços', icon: <Package className="w-4 h-4" /> },
     { key: 'prontuarios', label: 'Prontuários', icon: <FileText className="w-4 h-4" /> },
     { key: 'financeiro', label: 'Financeiro', icon: <DollarSign className="w-4 h-4" /> },
+    { key: 'receitas', label: 'Receitas', icon: <FileText className="w-4 h-4" /> },
   ];
 
   return (
@@ -757,6 +759,7 @@ const ImportadorDados = ({ onNavigateToCRM, userProfile }: ImportadorDadosProps)
       {/* ── ABA PRODUTOS ── */}
       {activeTab === 'prontuarios' && <ImportarProntuarios />}
       {activeTab === 'financeiro' && <ImportarFinanceiro />}
+      {activeTab === 'receitas' && <ImportarReceitas />}
 
       {activeTab === 'produtos' && (
         <div className="space-y-5">

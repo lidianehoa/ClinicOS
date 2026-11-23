@@ -23,7 +23,7 @@ export interface PrescricaoPdfData {
   tenantSlug?: string;
   subtipo?: SubtipoReceita;
   tipo?: 'receita_simples' | 'receita_manipulada';
-  status: 'rascunho' | 'aguardando_assinatura' | 'assinada' | 'substituida' | 'cancelada';
+  status: 'rascunho' | 'aguardando_assinatura' | 'assinada' | 'substituida' | 'cancelada' | 'importada';
   dataEmissao: string; // ISO date ou DD/MM/AAAA
   validadeAte?: string; // DD/MM/AAAA
   validadeDias?: number; // ex: 30 ou 10
