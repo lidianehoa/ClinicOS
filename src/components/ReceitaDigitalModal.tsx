@@ -266,7 +266,11 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
 
   // ── AÇÃO 1: BAIXAR PARA ASSINAR ───────────────────────────────────────────
   const handleBaixarParaAssinar = async (
-    opcoes: { baixar?: boolean } = {}
+    opcoes: {
+      baixar?: boolean;
+      /** Dados do certificado A1 já lido: o PDF sai com o selo de assinado em vez de "Aguardando". */
+      assinaturaPrevista?: { em: string; titular: string; cpfMascarado: string; emissorAC: string };
+    } = {}
   ): Promise<{ pdfBytes: Uint8Array; receitaSalva: ReceitaDigital } | null> => {
     if (isControladoSemSipeagro) {
       alert(
@@ -314,7 +318,9 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         tenantSlug,
         subtipo,
         tipo: subtipo === 'magistral' ? ('receita_manipulada' as const) : ('receita_simples' as const),
-        status: 'aguardando_assinatura' as StatusReceita,
+        // Com A1, o selo já sai como assinado: a assinatura é aplicada logo em seguida sobre estes bytes.
+        status: (opcoes.assinaturaPrevista ? 'assinada' : 'aguardando_assinatura') as StatusReceita,
+        assinaturaInfo: opcoes.assinaturaPrevista,
         dataEmissao: receita?.criadoEm || new Date().toISOString(),
         validadeAte,
         validadeDias,
@@ -440,13 +446,30 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
     setValidationError(null);
     setValidationSuccess(null);
     try {
-      // Gera (ou regera) o PDF final e grava o hash dele na receita, sem baixar
-      const preparado = await handleBaixarParaAssinar({ baixar: false });
+      // Biblioteca de assinatura carregada só quando necessária (não pesa no app)
+      const { assinarPdfComA1, lerCertificadoA1, bytesParaBase64 } = await import('../services/assinaturaA1');
+      const pfxBytes = await arquivoPfx.arrayBuffer();
+
+      // Lê o certificado ANTES de gerar o PDF, para o selo já sair com titular, CPF e AC.
+      // (Depois de assinado, o conteúdo visível não pode mudar sem invalidar a assinatura.)
+      const cert = lerCertificadoA1(pfxBytes, senhaPfx);
+      const cpfLimpo = (cert.cpf || userProfile?.cpf || '').replace(/\D/g, '');
+      const cpfMascarado = cpfLimpo.length === 11
+        ? `***.${cpfLimpo.substring(3, 6)}.${cpfLimpo.substring(6, 9)}-**`
+        : '***.***.***-**';
+
+      // Gera (ou regera) o PDF final com o selo de assinado e grava o hash dele na receita, sem baixar
+      const preparado = await handleBaixarParaAssinar({
+        baixar: false,
+        assinaturaPrevista: {
+          em: new Date().toISOString(),
+          titular: cert.titular,
+          cpfMascarado,
+          emissorAC: cert.emissor,
+        },
+      });
       if (!preparado) return;
 
-      // Biblioteca de assinatura carregada só quando necessária (não pesa no app)
-      const { assinarPdfComA1, bytesParaBase64 } = await import('../services/assinaturaA1');
-      const pfxBytes = await arquivoPfx.arrayBuffer();
       const { pdfAssinado } = await assinarPdfComA1(preparado.pdfBytes, pfxBytes, senhaPfx, {
         cpfEsperado: userProfile?.cpf,
         motivo: 'Receita veterinária',
