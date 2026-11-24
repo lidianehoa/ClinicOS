@@ -1307,9 +1307,15 @@ export interface Exame {
   id: string;
   pacienteId: string;
   tipo: string;
-  fileUrl: string;
+  fileUrl: string;                 // primeiro arquivo (compatibilidade)
   dataUpload: string;
   tenantId: string;
+  /** Todos os arquivos do exame (PDF e fotos), quando enviado mais de um */
+  arquivos?: { nome: string; url: string; contentType?: string }[];
+  dataExame?: string;              // data em que o exame foi feito (AAAA-MM-DD)
+  laboratorio?: string;
+  observacoes?: string;
+  evolucaoId?: string;             // evolução em que foi anexado
   // Campos de encaminhamento
   isEncaminhamento?: boolean;
   encaminhamento?: {

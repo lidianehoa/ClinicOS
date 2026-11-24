@@ -13,7 +13,8 @@ import {
   PlanoDiagnosticoItem,
   CondutaTratamentoItem
 } from '../services/dataService';
-import UploadExameModal from './UploadExameModal';
+import UploadExameModal, { SeletorArquivos } from './UploadExameModal';
+import { salvarExameComArquivos, arquivosDoExame } from '../services/examesService';
 
 interface EvolucaoCasoModuleProps {
   patientId: string;
@@ -53,6 +54,10 @@ export default function EvolucaoCasoModule({
   const [tratamentosInstituidos, setTratamentosInstituidos] = useState<CondutaTratamentoItem[]>([]);
 
   const [selectedExames, setSelectedExames] = useState<string[]>([]);
+  // Exames anexados direto nesta evolução (enviados ao salvar)
+  const [novosArquivos, setNovosArquivos] = useState<File[]>([]);
+  const [tipoNovoExame, setTipoNovoExame] = useState('');
+  const [progressoEnvio, setProgressoEnvio] = useState(0);
   const [registradoPor, setRegistradoPor] = useState(userProfile?.nome || 'Médico(a) Veterinário(a)');
   const [saving, setSaving] = useState(false);
 
@@ -84,6 +89,9 @@ export default function EvolucaoCasoModule({
     setPlanoDiagnostico([]);
     setTratamentosInstituidos([]);
     setSelectedExames([]);
+    setNovosArquivos([]);
+    setTipoNovoExame('');
+    setProgressoEnvio(0);
     setRegistradoPor(userProfile?.nome || 'Médico(a) Veterinário(a)');
     setIsModalOpen(true);
   };
@@ -150,15 +158,29 @@ export default function EvolucaoCasoModule({
     const cleanPlano = planoDiagnostico.filter(p => p.exameProcedimento.trim() || p.justificativa.trim());
     const cleanTrat = tratamentosInstituidos.filter(t => t.medicacaoProcedimento.trim() || t.doseViaFreq.trim() || t.duracao.trim());
 
+    if (novosArquivos.length && !tipoNovoExame.trim()) {
+      alert('Diga qual é o exame que está anexando (ex.: Hemograma + bioquímico).');
+      return;
+    }
+
     setSaving(true);
     try {
+      // 1º envia os arquivos de exame anexados aqui e já vincula à evolução
+      let examesVinculados = [...selectedExames];
+      if (novosArquivos.length) {
+        const exame = await salvarExameComArquivos(finalPatientId, novosArquivos, {
+          tipo: tipoNovoExame, dataExame: dataEvolucao,
+        }, setProgressoEnvio);
+        examesVinculados = [...examesVinculados, exame.id];
+      }
+
       await onSaveEvolucao({
         pacienteId: finalPatientId,
         consultaReferenciaId: consultaReferenciaId,
         tutorId: tutorId || '',
         data: dataEvolucao,
         texto: textoEvolucao.trim(),
-        examesReferenciados: selectedExames,
+        examesReferenciados: examesVinculados,
         planoDiagnostico: cleanPlano,
         tratamentosInstituidos: cleanTrat,
         condutaAjustada: condutaAjustada.trim() || undefined,
@@ -342,19 +364,23 @@ export default function EvolucaoCasoModule({
                         Exames Referenciados nesta Reavaliação ({linkedExams.length})
                       </h5>
                       <div className="flex flex-wrap gap-2">
-                        {linkedExams.map(ex => (
-                          <a
-                            key={ex.id}
-                            href={ex.fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-xl text-xs font-bold transition-colors"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-amber-600" />
-                            {ex.tipo} ({new Date(ex.dataUpload).toLocaleDateString('pt-BR')})
-                            <ExternalLink className="w-3 h-3 text-amber-500" />
-                          </a>
-                        ))}
+                        {linkedExams.flatMap(ex => {
+                          const arqs = arquivosDoExame(ex);
+                          return arqs.map((a, i) => (
+                            <a
+                              key={`${ex.id}_${i}`}
+                              href={a.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={a.nome}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-xl text-xs font-bold transition-colors"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-amber-600" />
+                              {ex.tipo}{arqs.length > 1 ? ` (${i + 1}/${arqs.length})` : ''} · {new Date((ex.dataExame ? ex.dataExame + 'T12:00:00' : ex.dataUpload)).toLocaleDateString('pt-BR')}
+                              <ExternalLink className="w-3 h-3 text-amber-500" />
+                            </a>
+                          ));
+                        })}
                       </div>
                     </div>
                   )}
@@ -646,12 +672,30 @@ export default function EvolucaoCasoModule({
                 />
               </div>
 
+              {/* Anexar exames nesta evolução */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase text-white/80 tracking-wider flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5 text-amber-400" />
+                  Anexar exames desta evolução
+                </label>
+                <input
+                  value={tipoNovoExame}
+                  onChange={e => setTipoNovoExame(e.target.value)}
+                  placeholder="Qual exame? Ex.: Hemograma + bioquímico, Ultrassom"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-amber-400"
+                />
+                <SeletorArquivos arquivos={novosArquivos} setArquivos={setNovosArquivos} escuro />
+                {saving && novosArquivos.length > 0 && (
+                  <p className="text-xs text-amber-300">Enviando arquivos… {progressoEnvio}%</p>
+                )}
+              </div>
+
               {/* Exames Referenciados */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold uppercase text-white/80 tracking-wider flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-amber-400" />
-                    Vincular Exames no Prontuário
+                    Vincular exames que já estão no prontuário
                   </label>
                   <button
                     type="button"
@@ -659,7 +703,7 @@ export default function EvolucaoCasoModule({
                     className="inline-flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-200 font-bold cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    + Anexar Novo Exame
+                    + Anexar exame com detalhes
                   </button>
                 </div>
 
@@ -723,8 +767,9 @@ export default function EvolucaoCasoModule({
       {/* Modal Inline para Anexar Exame */}
       {isUploadModalOpen && (
         <UploadExameModal
-          clientId={patientId}
+          clientId={patientId || selectedPatientId}
           onClose={() => setIsUploadModalOpen(false)}
+          onSaved={ex => setSelectedExames(prev => [...prev, ex.id])}
         />
       )}
     </div>

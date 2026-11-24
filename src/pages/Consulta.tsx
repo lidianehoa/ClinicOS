@@ -73,6 +73,7 @@ import ChecklistResiduosModal from '../components/ChecklistResiduosModal';
 import EvolucaoCasoModule from '../components/EvolucaoCasoModule';
 import AnamneseGuiadaModal from '../components/AnamneseGuiadaModal';
 import { IA_ATIVA } from '../config/recursos';
+import { arquivosDoExame } from '../services/examesService';
 
 /** Texto curto do atendimento Petlove para o histórico */
 const textoPetlove = (a?: { numero?: string; coparticipacao?: number; procedimento?: string }) =>
@@ -654,9 +655,13 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
         id: e.id,
         tipo: 'exame',
         titulo: `Exame Complementar: ${e.tipo}${encInfo}`,
-        data: e.dataUpload,
-        detalhes: `Arquivo anexado no prontuário.${encDetalhes}`,
-        arquivos: e.fileUrl ? [{ rotulo: 'Abrir exame', url: e.fileUrl }] : undefined
+        data: e.dataExame ? e.dataExame + 'T12:00:00' : e.dataUpload,
+        detalhes: [
+          `${arquivosDoExame(e).length} arquivo(s) anexado(s) no prontuário.`,
+          e.laboratorio ? `Laboratório/local: ${e.laboratorio}.` : '',
+          e.observacoes ? `Observações: ${e.observacoes}` : '',
+        ].filter(Boolean).join(' ') + encDetalhes,
+        arquivos: (() => { const a = arquivosDoExame(e); return a.length ? a.map((x, i) => ({ rotulo: a.length > 1 ? `Arquivo ${i + 1}: ${x.nome}` : 'Abrir exame', url: x.url })) : undefined; })()
       });
     });
 
@@ -1943,9 +1948,11 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
                 url: r.pdfAssinadoUrl || r.pdfImportadoUrl || (r as any).signedPdfUrl || r.originalPdfUrl,
               })),
               ...examesHist.map(e => ({
-                id: `e_${e.id}`, data: e.dataUpload, tipo: 'Exame', titulo: String(e.tipo || 'Exame'),
-                sub: e.isEncaminhamento && e.encaminhamento?.clinicaOrigem ? `Encaminhamento: ${e.encaminhamento.clinicaOrigem}` : 'Arquivo anexado',
+                id: `e_${e.id}`, data: e.dataExame ? e.dataExame + 'T12:00:00' : e.dataUpload, tipo: 'Exame', titulo: String(e.tipo || 'Exame'),
+                sub: [e.isEncaminhamento && e.encaminhamento?.clinicaOrigem ? `Encaminhamento: ${e.encaminhamento.clinicaOrigem}` : '', e.laboratorio || '',
+                  `${arquivosDoExame(e).length} arquivo${arquivosDoExame(e).length === 1 ? '' : 's'}`].filter(Boolean).join(' · '),
                 url: e.fileUrl,
+                arquivos: arquivosDoExame(e),
               })),
             ].sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
             if (lista.length === 0) return <p className="text-sm text-slate-400">Nenhuma receita ou exame ainda. Use "Receita Digital", "Receita Impressa" ou anexe um exame.</p>;
@@ -1960,7 +1967,15 @@ export default function Consulta({ selectedPatientId, onSelectPatient, userProfi
                         <p className="text-sm font-semibold text-slate-800 truncate">{x.titulo}</p>
                         <p className="text-xs text-slate-500">{!isNaN(d.getTime()) ? d.toLocaleDateString('pt-BR') : ''} · {x.sub}</p>
                       </div>
-                      {x.url ? (
+                      {(x as any).arquivos?.length > 1 ? (
+                        <div className="flex flex-wrap gap-1 justify-end">
+                          {(x as any).arquivos.map((a: any, i: number) => (
+                            <a key={a.url} href={a.url} target="_blank" rel="noopener noreferrer" title={a.nome} className="px-2.5 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 text-xs font-bold flex items-center gap-1">
+                              <FileText className="w-3.5 h-3.5" /> {i + 1}
+                            </a>
+                          ))}
+                        </div>
+                      ) : x.url ? (
                         <a href={x.url} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 text-xs font-bold flex items-center gap-1.5">
                           <FileText className="w-3.5 h-3.5" /> Abrir
                         </a>
