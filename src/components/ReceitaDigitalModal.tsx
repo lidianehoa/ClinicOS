@@ -213,9 +213,21 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
 
   const currentStatus: StatusReceita = receita?.status || 'rascunho';
   const isLocked = currentStatus !== 'rascunho';
-  const isControladoSemSipeagro =
-    (isControlado || subtipo === 'controle_especial') && origemControlado === 'veterinario' && !numeroNotificacaoSipeagro.trim();
-  const sipeagroParaSalvar = origemControlado === 'veterinario' ? numeroNotificacaoSipeagro.trim() || undefined : undefined;
+  // Controle especial por item: cada medicamento diz se é controlado e de onde vem
+  const itensControlados = itens.filter(it => it.controlado && it.produto.trim());
+  const temControlado = subtipo === 'controle_especial' || itensControlados.length > 0;
+  const controladosVet = itensControlados.filter(it => (it.origem || 'humano') === 'veterinario');
+  const controladosForaMapa = itensControlados.filter(it => (it.origem || 'humano') !== 'veterinario');
+  const origensFarmacia = new Set(controladosForaMapa.map(it => it.origem || 'humano'));
+  const itemVetSemNotificacao = controladosVet.find(it => !(it.notificacaoSipeagro || '').trim());
+  const isControladoSemSipeagro = !!itemVetSemNotificacao;
+  // Só dispensa as 2 vias se TODOS os controlados forem produto veterinário (que vai na Notificação SIPEAGRO)
+  const origemReceita: 'humano' | 'magistral' | 'veterinario' =
+    itensControlados.length > 0 && controladosForaMapa.length === 0 ? 'veterinario'
+      : origensFarmacia.size === 1 && origensFarmacia.has('magistral') ? 'magistral' : 'humano';
+  const sipeagroParaSalvar = controladosVet.map(it => (it.notificacaoSipeagro || '').trim()).filter(Boolean).join(' / ') || undefined;
+  void isControlado; void numeroNotificacaoSipeagro; // mantidos para receitas antigas
+  const ROTULO_ORIGEM: Record<string, string> = { humano: 'Farmácia comum', magistral: 'Manipular', veterinario: 'Produto veterinário (MAPA)' };
 
   const tenantId = getActiveTenantId();
   const tenantSlug = clinicConfig?.name
@@ -261,6 +273,11 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
       itens.map((it, i) => {
         if (i !== idx) return it;
         const updated = { ...it, ...patch };
+        if (patch.controlado) {
+          // Um item controlado transforma a receita em Controle Especial
+          setSubtipo('controle_especial');
+          setIsControlado(true);
+        }
         if (patch.quantidadePrescrita !== undefined) {
           const qtd = Number(patch.quantidadePrescrita) || 0;
           updated.saldoRestante = Math.max(0, qtd - (updated.quantidadeDispensada || 0));
@@ -280,7 +297,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
   ): Promise<{ pdfBytes: Uint8Array; receitaSalva: ReceitaDigital } | null> => {
     if (isControladoSemSipeagro) {
       alert(
-        'Medicamento controlado: emita a Notificação de Receita no SIPEAGRO e registre o número aqui antes de prosseguir.'
+        `"${itemVetSemNotificacao?.produto}" é produto veterinário controlado: emita a Notificação no SIPEAGRO e registre o número no item antes de prosseguir.`
       );
       return null;
     }
@@ -310,6 +327,11 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         quantidadeExtenso: it.quantidadeExtenso,
         unidade: it.unidade,
         posologia: it.posologia,
+        marcador: [
+          it.controlado ? 'Controle especial' : '',
+          (it.origem || 'humano') === 'magistral' ? 'Manipular' : (it.origem === 'veterinario' ? 'Produto veterinário' : ''),
+          it.controlado && it.origem === 'veterinario' && it.notificacaoSipeagro ? `Notificação SIPEAGRO nº ${it.notificacaoSipeagro}` : '',
+        ].filter(Boolean).join(' · ') || undefined,
       }));
 
       const orientacoesList = orientacoesTexto
@@ -322,7 +344,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         tokenDispensacao: tokenDisp,
         codigoVerificacao: codigoVerif,
         tenantSlug,
-        subtipo,
+        subtipo: (temControlado ? 'controle_especial' : subtipo) as SubtipoReceita,
         tipo: subtipo === 'magistral' ? ('receita_manipulada' as const) : ('receita_simples' as const),
         // Com A1, o selo já sai como assinado: a assinatura é aplicada logo em seguida sobre estes bytes.
         status: (opcoes.assinaturaPrevista ? 'assinada' : 'aguardando_assinatura') as StatusReceita,
@@ -359,9 +381,9 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         conteudoClinico: conteudo,
         orientacoes: orientacoesList,
         observacoesResponsavel: observacoesResponsavel.trim() || undefined,
-        isControlado: subtipo === 'controle_especial' || isControlado,
+        isControlado: temControlado,
         numeroNotificacaoSipeagro: sipeagroParaSalvar,
-        origemControlado: subtipo === 'controle_especial' || isControlado ? origemControlado : undefined,
+        origemControlado: temControlado ? origemReceita : undefined,
       };
 
       const { pdfBytes, originalSize, originalHashSha256, fileName } = await gerarPdfReceita(pdfData);
@@ -375,7 +397,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         pacienteId: pacienteId || receita?.pacienteId || 'paciente_generico',
         atendimentoId: atendimentoId || receita?.atendimentoId,
         tipo: subtipo === 'magistral' ? 'receita_manipulada' : 'receita_simples',
-        subtipo,
+        subtipo: (temControlado ? 'controle_especial' : subtipo) as SubtipoReceita,
         status: 'aguardando_assinatura',
         statusDispensacao: 'nao_dispensada',
         veterinarioId: userProfile?.uid || receita?.veterinarioId || 'vet_uid',
@@ -402,9 +424,9 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         observacoesResponsavel: observacoesResponsavel.trim() || undefined,
         conteudoPrescricao: conteudo,
         baseLegal: CLAUSULA_LEGAL_PADRAO,
-        isControlado: subtipo === 'controle_especial' || isControlado,
+        isControlado: temControlado,
         numeroNotificacaoSipeagro: sipeagroParaSalvar,
-        origemControlado: subtipo === 'controle_especial' || isControlado ? origemControlado : undefined,
+        origemControlado: temControlado ? origemReceita : undefined,
         validadeDias,
         validadeAte,
         versao: receita?.versao || 1,
@@ -611,9 +633,9 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         itens,
         orientacoes: orientacoesTexto.split('\n').filter(Boolean),
         observacoesResponsavel,
-        isControlado,
+        isControlado: temControlado,
         numeroNotificacaoSipeagro: sipeagroParaSalvar,
-        origemControlado,
+        origemControlado: origemReceita,
       });
       setReceita(nova);
       setSelectedSignedFile(null);
@@ -901,66 +923,43 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
             </div>
           </div>
 
-          {/* Seção 2: Notificação SIPEAGRO / MAPA */}
-          {(subtipo === 'controle_especial' || isControlado) && (
-            <div className="rounded-2xl bg-indigo-50/70 border border-indigo-200 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileBadge className="w-4 h-4 text-indigo-700" />
-                  <div>
-                    <span className="text-xs font-bold text-indigo-950 uppercase tracking-wide">
-                      Controle Especial
-                    </span>
-                    <p className="text-[11px] text-indigo-700">
-                      Uso humano: Portaria SVS/MS 344/98. Produto veterinário: Portaria MAPA 837/2025 (SIPEAGRO).
-                    </p>
-                  </div>
+          {/* Seção 2: Resumo do controle especial (definido em cada medicamento) */}
+          {temControlado && (
+            <div className="rounded-2xl bg-indigo-50/70 border border-indigo-200 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <FileBadge className="w-4 h-4 text-indigo-700" />
+                <div>
+                  <span className="text-xs font-bold text-indigo-950 uppercase tracking-wide">Controle Especial</span>
+                  <p className="text-[11px] text-indigo-700">
+                    Marque em cada medicamento se ele é controlado e de onde vem (farmácia comum, manipulação ou produto veterinário).
+                  </p>
                 </div>
               </div>
-
-              <div>
-                <p className="text-[11px] font-bold text-indigo-900 uppercase mb-1.5">De onde vem o medicamento?</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {([
-                    { id: 'humano', t: 'Uso humano', d: 'Farmácia comum (ex.: fluoxetina, gabapentina, tramadol). Receita de Controle Especial em 2 vias.' },
-                    { id: 'magistral', t: 'Manipulado', d: 'Farmácia de manipulação. Receita em 2 vias, sem SIPEAGRO.' },
-                    { id: 'veterinario', t: 'Produto veterinário', d: 'Registrado no MAPA. Exige Notificação emitida no SIPEAGRO.' },
-                  ] as const).map(o => (
-                    <button key={o.id} type="button" disabled={isLocked} onClick={() => setOrigemControlado(o.id)}
-                      className={`p-2.5 rounded-xl border text-left transition-all ${origemControlado === o.id ? 'border-indigo-500 bg-white ring-2 ring-indigo-500/20' : 'border-indigo-200 bg-white/60 hover:border-indigo-300'} ${isLocked ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                      <p className="text-xs font-bold text-indigo-950">{o.t}</p>
-                      <p className="text-[10.5px] text-slate-500 leading-tight mt-0.5">{o.d}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {origemControlado === 'veterinario' ? (
-                <>
-                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      A Notificação de Receita de produto veterinário controlado é emitida e numerada no <strong>SIPEAGRO</strong>. Registre o número abaixo para vincular.
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-indigo-900 uppercase block mb-1">
-                      Número da Notificação SIPEAGRO / MAPA *
-                    </label>
-                    <input autoComplete="off"
-                      type="text"
-                      disabled={isLocked}
-                      value={numeroNotificacaoSipeagro}
-                      onChange={e => setNumeroNotificacaoSipeagro(e.target.value)}
-                      placeholder="Ex: SP-2026-0098412-VET"
-                      className="w-full bg-white border border-indigo-300 rounded-xl py-2 px-3 text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
-                    />
-                  </div>
-                </>
+              {itensControlados.length === 0 ? (
+                <p className="text-[11px] text-indigo-800">Nenhum medicamento marcado como controlado ainda.</p>
               ) : (
+                <ul className="text-[11px] text-indigo-900 space-y-0.5">
+                  {itensControlados.map(it => (
+                    <li key={it.id}>• <strong>{it.produto}</strong> — {ROTULO_ORIGEM[it.origem || 'humano']}</li>
+                  ))}
+                </ul>
+              )}
+              {controladosForaMapa.length > 0 || itensControlados.length === 0 ? (
                 <p className="text-[11px] text-indigo-800 bg-white/70 border border-indigo-100 rounded-xl p-2.5">
-                  Não precisa de SIPEAGRO. O PDF sai em <strong>2 vias</strong> (1ª fica retida na farmácia, 2ª com o tutor), com os quadros de identificação do comprador e do fornecedor. Quantidade por extenso é obrigatória.
+                  Uso humano e manipulados não precisam de SIPEAGRO. O PDF sai em <strong>2 vias</strong> (1ª retida na farmácia, 2ª com o tutor), com identificação do comprador e do fornecedor. Quantidade por extenso é obrigatória.
                 </p>
+              ) : null}
+              {origensFarmacia.size > 1 && (
+                <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-[11px] flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>Há controlados de farmácia comum e de manipulação na mesma receita. Cada farmácia retém a 1ª via: se forem compradas em lugares diferentes, faça uma receita para cada farmácia.</span>
+                </div>
+              )}
+              {controladosVet.length > 0 && (
+                <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-[11px] flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>Produto veterinário controlado exige Notificação emitida no <strong>SIPEAGRO</strong> (uma por produto). Informe o número em cada item.</span>
+                </div>
               )}
             </div>
           )}
@@ -1003,6 +1002,28 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                       </button>
                     )}
                   </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-bold cursor-pointer ${it.controlado ? 'border-indigo-400 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-white text-slate-600'}`}>
+                      <input type="checkbox" disabled={isLocked} checked={!!it.controlado}
+                        onChange={e => handleUpdateItem(idx, { controlado: e.target.checked })} className="accent-indigo-600" />
+                      Controle especial
+                    </label>
+                    {([['humano', 'Farmácia comum'], ['magistral', 'Manipular'], ['veterinario', 'Produto veterinário']] as const).map(([id, rot]) => (
+                      <button key={id} type="button" disabled={isLocked}
+                        onClick={() => handleUpdateItem(idx, { origem: id })}
+                        className={`px-2.5 py-1 rounded-lg border font-semibold ${(it.origem || 'humano') === id ? 'border-teal-500 bg-teal-50 text-teal-900' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
+                        {rot}
+                      </button>
+                    ))}
+                  </div>
+                  {it.controlado && it.origem === 'veterinario' && (
+                    <input autoComplete="off" type="text" disabled={isLocked}
+                      placeholder="Nº da Notificação SIPEAGRO deste produto *"
+                      value={it.notificacaoSipeagro || ''}
+                      onChange={e => handleUpdateItem(idx, { notificacaoSipeagro: e.target.value })}
+                      className="w-full px-3 py-1.5 rounded-xl border border-indigo-300 bg-white text-xs font-mono focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100" />
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
                     <div className="sm:col-span-2">

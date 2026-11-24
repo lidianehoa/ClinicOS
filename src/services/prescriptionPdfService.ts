@@ -36,6 +36,8 @@ export interface PrescricaoItemData {
   quantidadeExtenso?: string;
   unidade?: string;
   posologia: string;
+  /** Ex.: "Controle especial · Manipular" */
+  marcador?: string;
 }
 
 export interface PrescricaoPdfData {
@@ -730,6 +732,17 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
     });
 
     curY -= 13;
+
+    if (item.marcador) {
+      activePage.drawText(item.marcador, {
+        x: margin + 16,
+        y: curY + 1,
+        size: 7,
+        font: fontBold,
+        color: rgb(primaryClinic.r, primaryClinic.g, primaryClinic.b),
+      });
+      curY -= 10;
+    }
 
     // Linha da Posologia
     const posologiaLines = wrapText(item.posologia || 'Conforme orientação veterinária.', 85);

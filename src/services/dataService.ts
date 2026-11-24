@@ -205,6 +205,12 @@ export interface ItemReceitaPrescrita {
   posologia: string; // Ex: "Administrar 1 comprimido por via oral a cada 12 horas durante 7 dias"
   quantidadeDispensada?: number;
   saldoRestante?: number;
+  /** Item sujeito a controle especial (ex.: lista C1) */
+  controlado?: boolean;
+  /** humano = farmácia comum; magistral = manipular; veterinario = produto registrado no MAPA */
+  origem?: 'humano' | 'magistral' | 'veterinario';
+  /** Notificação SIPEAGRO (só produto veterinário controlado) */
+  notificacaoSipeagro?: string;
 }
 
 export interface DispensacaoItemInfo {
