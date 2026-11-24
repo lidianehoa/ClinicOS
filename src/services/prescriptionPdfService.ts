@@ -97,6 +97,7 @@ export interface PrescricaoPdfData {
   // Medicamento Controlado / SIPEAGRO
   isControlado?: boolean;
   numeroNotificacaoSipeagro?: string;
+  origemControlado?: 'humano' | 'magistral' | 'veterinario';
 
   // Dados da Assinatura ICP-Brasil (se assinada)
   assinaturaInfo?: {
@@ -655,7 +656,10 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
   // 5. Itens da Prescrição e 6. Orientações
   // Suporte a multi-página inteligente (máximo 2 páginas)
   // ──────────────────────────────────────────────────────────────────────────
-  const bottomBlocksHeight = 230; // Altura estimada necessária para os blocos 7 a 11
+  // Receita de Controle Especial (Portaria 344 / magistral): 2 vias + identificação do comprador e do fornecedor
+  const receitaDuasVias = subtipo === 'controle_especial' && data.origemControlado !== 'veterinario';
+  const blocoCompradorH = receitaDuasVias ? 72 : 0;
+  const bottomBlocksHeight = 230 + blocoCompradorH; // Altura estimada necessária para os blocos 7 a 11
   let activePage = page1;
   let pageCount = 1;
 
@@ -1186,6 +1190,26 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
     addClickableLink(activePage, icpTextX, sealY + sealBoxH - 61, 95, 10, itiUrl);
   }
 
+  // Identificação do comprador e do fornecedor (Receita de Controle Especial)
+  if (receitaDuasVias) {
+    const boxH = 62;
+    const boxY = sealY - 8 - boxH;
+    const gap = 10;
+    const boxW = (contentWidth - gap) / 2;
+    const quadro = (x: number, titulo: string, linhas: string[]) => {
+      activePage.drawRectangle({ x, y: boxY, width: boxW, height: boxH, borderColor: borderLight, borderWidth: 1, color: rgb(1, 1, 1) });
+      activePage.drawText(titulo, { x: x + 8, y: boxY + boxH - 12, size: 7, font: fontBold, color: textDark });
+      linhas.forEach((l, i) => {
+        const y = boxY + boxH - 25 - i * 10.5;
+        activePage.drawText(l, { x: x + 8, y, size: 6.5, font: fontRegular, color: textMuted });
+        const w = fontRegular.widthOfTextAtSize(l, 6.5);
+        activePage.drawLine({ start: { x: x + 10 + w, y: y - 1 }, end: { x: x + boxW - 8, y: y - 1 }, thickness: 0.4, color: borderLight });
+      });
+    };
+    quadro(margin, 'IDENTIFICAÇÃO DO COMPRADOR', ['Nome:', 'RG / órgão emissor:', 'Endereço:', 'Telefone:']);
+    quadro(margin + boxW + gap, 'IDENTIFICAÇÃO DO FORNECEDOR', ['Farmacêutico(a):', 'Data:', 'Assinatura:', '']);
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // 11. Rodapé Final
   // ──────────────────────────────────────────────────────────────────────────
@@ -1217,6 +1241,19 @@ export async function gerarPdfReceita(data: PrescricaoPdfData): Promise<Generate
       size: 6.5,
       font: fontRegular,
       color: rgb(0.55, 0.6, 0.68),
+    });
+  }
+
+  // Receita de Controle Especial: duplica as páginas em 1ª via (farmácia) e 2ª via (tutor)
+  if (receitaDuasVias) {
+    const n = doc.getPageCount();
+    const idx = Array.from({ length: n }, (_, i) => i);
+    const copias = await doc.copyPages(doc, idx);
+    copias.forEach(p => doc.addPage(p));
+    doc.getPages().forEach((p, i) => {
+      const rotulo = i < n ? '1ª VIA – RETENÇÃO DA FARMÁCIA' : '2ª VIA – ORIENTAÇÃO AO TUTOR';
+      const w = fontBold.widthOfTextAtSize(rotulo, 7.5);
+      p.drawText(rotulo, { x: (pageWidth - w) / 2, y: margin - 18, size: 7.5, font: fontBold, color: textDark });
     });
   }
 

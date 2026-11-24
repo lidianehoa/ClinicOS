@@ -297,6 +297,8 @@ export interface ReceitaDigital {
   baseLegal: string;
   isControlado?: boolean;
   numeroNotificacaoSipeagro?: string;
+  /** humano = Portaria 344 (farmácia comum); magistral = manipulado; veterinario = produto MAPA (SIPEAGRO) */
+  origemControlado?: 'humano' | 'magistral' | 'veterinario';
 
   // Validade
   validadeDias: number;

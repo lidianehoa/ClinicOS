@@ -151,6 +151,10 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
   const [numeroNotificacaoSipeagro, setNumeroNotificacaoSipeagro] = useState<string>(
     initialReceita?.numeroNotificacaoSipeagro || ''
   );
+  // Origem do controlado: uso humano (Portaria 344) e manipulado não usam SIPEAGRO
+  const [origemControlado, setOrigemControlado] = useState<'humano' | 'magistral' | 'veterinario'>(
+    initialReceita?.origemControlado || (initialReceita?.numeroNotificacaoSipeagro ? 'veterinario' : 'humano')
+  );
 
   const [clinicConfig, setClinicConfig] = useState<any>(null);
   const [clinicLogo, setClinicLogo] = useState<string>('');
@@ -192,6 +196,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
       setConteudo(initialReceita.conteudoPrescricao);
       setIsControlado(!!initialReceita.isControlado);
       setNumeroNotificacaoSipeagro(initialReceita.numeroNotificacaoSipeagro || '');
+      setOrigemControlado(initialReceita.origemControlado || (initialReceita.numeroNotificacaoSipeagro ? 'veterinario' : 'humano'));
       if (initialReceita.itens && initialReceita.itens.length > 0) {
         setItens(initialReceita.itens);
       }
@@ -209,7 +214,8 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
   const currentStatus: StatusReceita = receita?.status || 'rascunho';
   const isLocked = currentStatus !== 'rascunho';
   const isControladoSemSipeagro =
-    isControlado && subtipo === 'simples' && !numeroNotificacaoSipeagro.trim();
+    (isControlado || subtipo === 'controle_especial') && origemControlado === 'veterinario' && !numeroNotificacaoSipeagro.trim();
+  const sipeagroParaSalvar = origemControlado === 'veterinario' ? numeroNotificacaoSipeagro.trim() || undefined : undefined;
 
   const tenantId = getActiveTenantId();
   const tenantSlug = clinicConfig?.name
@@ -227,7 +233,7 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
   const resolvedMapa = userProfile?.registroMapa || clinicConfig?.registroMapa || receita?.registroMapa || '';
 
   // Aviso MAPA para controle especial
-  const showMapaWarning = subtipo === 'controle_especial' && !resolvedMapa;
+  const showMapaWarning = subtipo === 'controle_especial' && origemControlado === 'veterinario' && !resolvedMapa;
 
   // Itens helpers
   const handleAddItem = () => {
@@ -354,7 +360,8 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         orientacoes: orientacoesList,
         observacoesResponsavel: observacoesResponsavel.trim() || undefined,
         isControlado: subtipo === 'controle_especial' || isControlado,
-        numeroNotificacaoSipeagro: isControlado ? numeroNotificacaoSipeagro.trim() : undefined,
+        numeroNotificacaoSipeagro: sipeagroParaSalvar,
+        origemControlado: subtipo === 'controle_especial' || isControlado ? origemControlado : undefined,
       };
 
       const { pdfBytes, originalSize, originalHashSha256, fileName } = await gerarPdfReceita(pdfData);
@@ -396,7 +403,8 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         conteudoPrescricao: conteudo,
         baseLegal: CLAUSULA_LEGAL_PADRAO,
         isControlado: subtipo === 'controle_especial' || isControlado,
-        numeroNotificacaoSipeagro: isControlado ? numeroNotificacaoSipeagro.trim() : undefined,
+        numeroNotificacaoSipeagro: sipeagroParaSalvar,
+        origemControlado: subtipo === 'controle_especial' || isControlado ? origemControlado : undefined,
         validadeDias,
         validadeAte,
         versao: receita?.versao || 1,
@@ -604,7 +612,8 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
         orientacoes: orientacoesTexto.split('\n').filter(Boolean),
         observacoesResponsavel,
         isControlado,
-        numeroNotificacaoSipeagro,
+        numeroNotificacaoSipeagro: sipeagroParaSalvar,
+        origemControlado,
       });
       setReceita(nova);
       setSelectedSignedFile(null);
@@ -900,37 +909,59 @@ export const ReceitaDigitalModal: React.FC<ReceitaDigitalModalProps> = ({
                   <FileBadge className="w-4 h-4 text-indigo-700" />
                   <div>
                     <span className="text-xs font-bold text-indigo-950 uppercase tracking-wide">
-                      Controle Especial / SIPEAGRO
+                      Controle Especial
                     </span>
                     <p className="text-[11px] text-indigo-700">
-                      Regulamentado pela IN MAPA nº 35/2017 e Portaria SVS/MS 344/98.
+                      Uso humano: Portaria SVS/MS 344/98. Produto veterinário: Portaria MAPA 837/2025 (SIPEAGRO).
                     </p>
                   </div>
                 </div>
               </div>
 
-              {subtipo === 'simples' || subtipo === 'controle_especial' ? (
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Aviso Regulatório CFMV/MAPA:</strong> Notificação de Receita para industrializados controlados deve ser emitida e numerada no <strong>SIPEAGRO</strong>. Registre o número da notificação abaixo para vinculação.
-                  </div>
-                </div>
-              ) : null}
-
               <div>
-                <label className="text-[11px] font-bold text-indigo-900 uppercase block mb-1">
-                  Número da Notificação SIPEAGRO / MAPA {subtipo === 'controle_especial' ? '*' : '(Opcional)'}
-                </label>
-                <input autoComplete="off"
-                  type="text"
-                  disabled={isLocked}
-                  value={numeroNotificacaoSipeagro}
-                  onChange={e => setNumeroNotificacaoSipeagro(e.target.value)}
-                  placeholder="Ex: SP-2026-0098412-VET"
-                  className="w-full bg-white border border-indigo-300 rounded-xl py-2 px-3 text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
-                />
+                <p className="text-[11px] font-bold text-indigo-900 uppercase mb-1.5">De onde vem o medicamento?</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {([
+                    { id: 'humano', t: 'Uso humano', d: 'Farmácia comum (ex.: fluoxetina, gabapentina, tramadol). Receita de Controle Especial em 2 vias.' },
+                    { id: 'magistral', t: 'Manipulado', d: 'Farmácia de manipulação. Receita em 2 vias, sem SIPEAGRO.' },
+                    { id: 'veterinario', t: 'Produto veterinário', d: 'Registrado no MAPA. Exige Notificação emitida no SIPEAGRO.' },
+                  ] as const).map(o => (
+                    <button key={o.id} type="button" disabled={isLocked} onClick={() => setOrigemControlado(o.id)}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${origemControlado === o.id ? 'border-indigo-500 bg-white ring-2 ring-indigo-500/20' : 'border-indigo-200 bg-white/60 hover:border-indigo-300'} ${isLocked ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                      <p className="text-xs font-bold text-indigo-950">{o.t}</p>
+                      <p className="text-[10.5px] text-slate-500 leading-tight mt-0.5">{o.d}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {origemControlado === 'veterinario' ? (
+                <>
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      A Notificação de Receita de produto veterinário controlado é emitida e numerada no <strong>SIPEAGRO</strong>. Registre o número abaixo para vincular.
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-indigo-900 uppercase block mb-1">
+                      Número da Notificação SIPEAGRO / MAPA *
+                    </label>
+                    <input autoComplete="off"
+                      type="text"
+                      disabled={isLocked}
+                      value={numeroNotificacaoSipeagro}
+                      onChange={e => setNumeroNotificacaoSipeagro(e.target.value)}
+                      placeholder="Ex: SP-2026-0098412-VET"
+                      className="w-full bg-white border border-indigo-300 rounded-xl py-2 px-3 text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-indigo-800 bg-white/70 border border-indigo-100 rounded-xl p-2.5">
+                  Não precisa de SIPEAGRO. O PDF sai em <strong>2 vias</strong> (1ª fica retida na farmácia, 2ª com o tutor), com os quadros de identificação do comprador e do fornecedor. Quantidade por extenso é obrigatória.
+                </p>
+              )}
             </div>
           )}
 
